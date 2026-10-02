@@ -2,6 +2,7 @@
 
 #include <QOpenGLWidget>
 #include <QSet>
+#include <QSize>
 #include <QStringList>
 #include <QVariant>
 
@@ -17,7 +18,10 @@ public:
     explicit MpvWidget(QWidget *parent = nullptr);
     ~MpvWidget() override;
 
-    void loadFile(const QString &pathOrUrl);
+    // `subtitles` are added once the file has loaded.
+    void loadFile(const QString &pathOrUrl, const QStringList &subtitles = {});
+    // Adds an external subtitle file to the current file and selects it.
+    void addSubtitle(const QString &path);
     void adjustVolume(double delta);
 
     // Runs an mpv command asynchronously, e.g. {"seek", "5", "relative"}.
@@ -29,12 +33,23 @@ public:
     // Sets a property asynchronously from its string form, e.g. ("speed", "1.5").
     void setMpvProperty(const QString &name, const QString &value);
 
+    // Tracks of `type` ("video", "audio" or "sub") from mpv's track-list.
+    QList<QVariantMap> tracks(const QString &type) const;
+    // Human-readable track name, e.g. "#2: Commentary [jpn] (aac)".
+    static QString trackLabel(const QVariantMap &track);
+
+    static bool isSubtitleFile(const QString &path);
+    // A QFileDialog name filter matching subtitle files.
+    static QString subtitleFileFilter();
+
 Q_SIGNALS:
     void titleChanged(const QString &title);
     // Emitted when an observed property changes after its initial value is known.
     void propertyChanged(const QString &name, const QVariant &value);
     // Emitted once playback resumes after a user seek.
     void seeked();
+    // Emitted once per file, when the video's display size is first known.
+    void videoSizeKnown(const QSize &size);
 
 protected:
     void initializeGL() override;
@@ -52,8 +67,10 @@ private:
     mpv_render_context *m_renderCtx = nullptr;
     // Files requested before the GL context existed; loading them earlier
     // would make mpv's video output fail to initialize.
-    QStringList m_pendingFiles;
+    QString m_pendingFile;
+    QStringList m_pendingSubtitles;
     QSet<QString> m_initializedProperties;
     bool m_fileLoaded = false;
     bool m_seeking = false;
+    bool m_awaitingVideoSize = false;
 };

@@ -7,9 +7,11 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QKeyEvent>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QScreen>
 #include <QStandardPaths>
 #include <QWheelEvent>
 #include <QWindow>
@@ -21,6 +23,8 @@ namespace {
 
 constexpr double kVolumeStep = 5.0;
 constexpr int kResizeMargin = 6;
+// Largest share of the screen's available area an automatic resize may use.
+constexpr qreal kMaxScreenFraction = 0.9;
 
 QString formatDelay(double seconds)
 {
@@ -51,6 +55,11 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_mpv, &MpvWidget::propertyChanged, this, &MainWindow::showPropertyOsd);
     connect(m_mpv, &MpvWidget::seeked, this, &MainWindow::showSeekOsd);
+    // Like PotPlayer, open each file at 100% of its video resolution.
+    connect(m_mpv, &MpvWidget::videoSizeKnown, this, [this](const QSize &size) {
+        if (!isFullScreen() && !isMaximized())
+            resizeToVideo(size, 1.0);
+    });
     connect(m_menu, &PlayerMenu::osdRequested, m_osd,
             [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
 }
@@ -65,6 +74,12 @@ void MainWindow::openFileDialog()
     const QString file = QFileDialog::getOpenFileName(this, tr("Open File"));
     if (!file.isEmpty())
         openFile(file);
+}
+
+void MainWindow::loadSubtitle(const QString &path)
+{
+    m_mpv->addSubtitle(path);
+    m_osd->showValue(tr("Subtitle Loaded"), QFileInfo(path).fileName());
 }
 
 void MainWindow::toggleFullScreen()
@@ -93,9 +108,32 @@ void MainWindow::scaleToVideo(qreal scale)
 
     if (isFullScreen() || isMaximized())
         showNormal();
+    if (resizeToVideo(QSize(videoWidth, videoHeight), scale))
+        m_osd->showValue(tr("Window Size"), QStringLiteral("%1%").arg(qRound(scale * 100)));
+}
+
+bool MainWindow::resizeToVideo(const QSize &videoSize, qreal scale)
+{
+    QScreen *screen = this->screen();
+    if (!screen || videoSize.isEmpty())
+        return false;
+
+    // Video pixels map 1:1 to device pixels at 100%.
     const qreal dpr = devicePixelRatioF();
-    resize(qRound(videoWidth * scale / dpr), qRound(videoHeight * scale / dpr));
-    m_osd->showValue(tr("Window Size"), QStringLiteral("%1%").arg(qRound(scale * 100)));
+    QSizeF target(videoSize.width() * scale / dpr, videoSize.height() * scale / dpr);
+    const QRect available = screen->availableGeometry();
+    const QSizeF limit = QSizeF(available.size()) * kMaxScreenFraction;
+    if (target.width() > limit.width() || target.height() > limit.height())
+        target.scale(limit, Qt::KeepAspectRatio);
+    const QSize size = target.toSize().expandedTo(minimumSize());
+
+    QRect frame(QPoint(), size);
+    frame.moveCenter(geometry().center());
+    // Keep the whole window on the screen it is on.
+    frame.moveLeft(std::clamp(frame.left(), available.left(), std::max(available.left(), available.right() - size.width() + 1)));
+    frame.moveTop(std::clamp(frame.top(), available.top(), std::max(available.top(), available.bottom() - size.height() + 1)));
+    setGeometry(frame);
+    return true;
 }
 
 void MainWindow::showPropertyOsd(const QString &name, const QVariant &value)
@@ -113,6 +151,8 @@ void MainWindow::showPropertyOsd(const QString &name, const QVariant &value)
         m_osd->showValue(tr("Audio Delay"), formatDelay(value.toDouble()));
     } else if (name == QLatin1String("sub-delay")) {
         m_osd->showValue(tr("Subtitle Delay"), formatDelay(value.toDouble()));
+    } else if (name == QLatin1String("sub-pos")) {
+        m_osd->showValue(tr("Subtitle Position"), QStringLiteral("%1%").arg(qRound(value.toDouble())));
     } else if (name == QLatin1String("sub-scale")) {
         m_osd->showValue(tr("Subtitle Size"), QStringLiteral("%1%").arg(qRound(value.toDouble() * 100)));
     }
@@ -194,8 +234,22 @@ void MainWindow::dropEvent(QDropEvent *event)
     const QList<QUrl> urls = event->mimeData()->urls();
     if (urls.isEmpty())
         return;
-    const QUrl &url = urls.first();
-    openFile(url.isLocalFile() ? url.toLocalFile() : url.toString());
+    // Subtitle files are added to the playing video, or to a video dropped with them.
+    QString media;
+    QStringList subtitles;
+    for (const QUrl &url : urls) {
+        const QString path = url.isLocalFile() ? url.toLocalFile() : url.toString();
+        if (url.isLocalFile() && MpvWidget::isSubtitleFile(path))
+            subtitles.append(path);
+        else if (media.isEmpty())
+            media = path;
+    }
+    if (!media.isEmpty()) {
+        m_mpv->loadFile(media, subtitles);
+    } else {
+        for (const QString &subtitle : std::as_const(subtitles))
+            loadSubtitle(subtitle);
+    }
     event->acceptProposedAction();
 }
 

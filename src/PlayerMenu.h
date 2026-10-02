@@ -56,6 +56,10 @@ private:
     // A submenu listing tracks of `type` ("video", "audio", "sub") bound to `property`.
     QMenu *addTrackMenu(QMenu *menu, const QString &title, const QString &type, const QString &property);
 
+    // Selects the next subtitle track for `property` ("sid" or "secondary-sid").
+    void cycleTrack(const QString &title, const QString &property);
+    // The track id selected in the other subtitle slot, or empty for non-subtitle properties.
+    QString otherSubtitleSlot(const QString &property) const;
     void bindShortcut(QAction *action, const QKeySequence &shortcut);
     void syncState();
 

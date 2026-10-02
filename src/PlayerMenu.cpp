@@ -37,23 +37,6 @@ bool valuesMatch(const QString &current, const QString &candidate)
     return a && b && std::abs(*a - *b) < 1e-3;
 }
 
-QString trackLabel(const QVariantMap &track)
-{
-    QString label = QStringLiteral("#%1").arg(track.value(QStringLiteral("id")).toLongLong());
-    const QString title = track.value(QStringLiteral("title")).toString();
-    const QString lang = track.value(QStringLiteral("lang")).toString();
-    const QString codec = track.value(QStringLiteral("codec")).toString();
-    if (!title.isEmpty())
-        label += QStringLiteral(": ") + title;
-    if (!lang.isEmpty())
-        label += QStringLiteral(" [%1]").arg(lang);
-    if (!codec.isEmpty())
-        label += QStringLiteral(" (%1)").arg(codec);
-    if (track.value(QStringLiteral("external")).toBool())
-        label += QStringLiteral(" - external");
-    return label;
-}
-
 } // namespace
 
 PlayerMenu::PlayerMenu(MpvWidget *mpv, MainWindow *window)
@@ -124,26 +107,53 @@ void PlayerMenu::buildAudioMenu()
 
 void PlayerMenu::buildSubtitleMenu()
 {
+    const QString sid = QStringLiteral("sid");
+    const QString secondarySid = QStringLiteral("secondary-sid");
+
     QMenu *subs = addMenu(tr("Subtitles"));
-    addTrackMenu(subs, tr("Subtitle Track"), QStringLiteral("sub"), QStringLiteral("sid"));
+    addTrackMenu(subs, tr("Subtitle Track"), QStringLiteral("sub"), sid);
+    addTrackMenu(subs, tr("Secondary Subtitle Track"), QStringLiteral("sub"), secondarySid);
+    addItem(subs, tr("Next Subtitle"), [this, sid] { cycleTrack(tr("Subtitle Track"), sid); },
+            QKeySequence(Qt::ALT | Qt::Key_L));
+    addItem(subs, tr("Next Secondary Subtitle"), [this, secondarySid] {
+        cycleTrack(tr("Secondary Subtitle Track"), secondarySid);
+    }, QKeySequence(Qt::ALT | Qt::SHIFT | Qt::Key_L));
     addToggle(subs, tr("Show Subtitles"), QStringLiteral("sub-visibility"), QKeySequence(Qt::ALT | Qt::Key_H));
+    addToggle(subs, tr("Show Secondary Subtitles"), QStringLiteral("secondary-sub-visibility"),
+              QKeySequence(Qt::ALT | Qt::SHIFT | Qt::Key_H));
     addItem(subs, tr("Load Subtitle File..."), [this] {
         const QString file = QFileDialog::getOpenFileName(m_window, tr("Load Subtitle File"), {},
-                                                          tr("Subtitles (*.srt *.ass *.ssa *.vtt *.sub *.sup);;All Files (*)"));
+                                                          MpvWidget::subtitleFileFilter());
         if (!file.isEmpty())
-            m_mpv->command({QStringLiteral("sub-add"), file, QStringLiteral("select")});
+            m_window->loadSubtitle(file);
     });
+
+    // Delay and position changes are observed by MainWindow, which shows the OSD.
     subs->addSeparator();
-    addCommand(subs, tr("Subtitle Delay +0.1s"), {QStringLiteral("add"), QStringLiteral("sub-delay"), QStringLiteral("0.1")},
+    const QString delay = QStringLiteral("sub-delay");
+    addCommand(subs, tr("Delay +0.5s"), {QStringLiteral("add"), delay, QStringLiteral("0.5")},
+               QKeySequence(Qt::Key_BracketRight));
+    addCommand(subs, tr("Delay -0.5s"), {QStringLiteral("add"), delay, QStringLiteral("-0.5")},
+               QKeySequence(Qt::Key_BracketLeft));
+    addCommand(subs, tr("Delay +0.1s"), {QStringLiteral("add"), delay, QStringLiteral("0.1")},
                QKeySequence(Qt::Key_Period));
-    addCommand(subs, tr("Subtitle Delay -0.1s"), {QStringLiteral("add"), QStringLiteral("sub-delay"), QStringLiteral("-0.1")},
+    addCommand(subs, tr("Delay -0.1s"), {QStringLiteral("add"), delay, QStringLiteral("-0.1")},
                QKeySequence(Qt::Key_Comma));
-    addCommand(subs, tr("Reset Subtitle Delay"), {QStringLiteral("set"), QStringLiteral("sub-delay"), QStringLiteral("0")});
+    addCommand(subs, tr("Reset Delay"), {QStringLiteral("set"), delay, QStringLiteral("0")});
+
     subs->addSeparator();
-    addCommand(subs, tr("Larger Subtitles"), {QStringLiteral("add"), QStringLiteral("sub-scale"), QStringLiteral("0.1")},
+    // sub-pos is the vertical position in percent of the frame height (100 = bottom
+    // margin). Unlike sub-margin-y it also moves ASS and embedded SRT subtitles.
+    const QString position = QStringLiteral("sub-pos");
+    addCommand(subs, tr("Move Up"), {QStringLiteral("add"), position, QStringLiteral("-1")},
                QKeySequence(Qt::ALT | Qt::Key_Up));
-    addCommand(subs, tr("Smaller Subtitles"), {QStringLiteral("add"), QStringLiteral("sub-scale"), QStringLiteral("-0.1")},
+    addCommand(subs, tr("Move Down"), {QStringLiteral("add"), position, QStringLiteral("1")},
                QKeySequence(Qt::ALT | Qt::Key_Down));
+    addCommand(subs, tr("Reset Position"), {QStringLiteral("set"), position, QStringLiteral("100")});
+    addCommand(subs, tr("Larger"), {QStringLiteral("add"), QStringLiteral("sub-scale"), QStringLiteral("0.1")},
+               QKeySequence(Qt::ALT | Qt::Key_PageUp));
+    addCommand(subs, tr("Smaller"), {QStringLiteral("add"), QStringLiteral("sub-scale"), QStringLiteral("-0.1")},
+               QKeySequence(Qt::ALT | Qt::Key_PageDown));
 }
 
 void PlayerMenu::buildPlaybackMenu()
@@ -277,11 +287,17 @@ QMenu *PlayerMenu::addTrackMenu(QMenu *menu, const QString &title, const QString
         qDeleteAll(submenu->findChildren<QActionGroup *>(Qt::FindDirectChildrenOnly));
         submenu->clear();
         auto *group = new QActionGroup(submenu);
+        // Compare against the property itself: a track's "selected" flag is also set
+        // when it is shown as the secondary subtitle.
+        const QString current = m_mpv->mpvPropertyString(property);
+        // mpv refuses to show one subtitle track as both primary and secondary.
+        const QString taken = otherSubtitleSlot(property);
 
-        auto addTrack = [&](const QString &label, const QString &value, bool selected) {
+        auto addTrack = [&](const QString &label, const QString &value) {
             QAction *action = submenu->addAction(label);
             action->setCheckable(true);
-            action->setChecked(selected);
+            action->setChecked(value == current);
+            action->setEnabled(value != taken);
             group->addAction(action);
             connect(action, &QAction::triggered, this, [this, title, property, label, value] {
                 m_mpv->setMpvProperty(property, value);
@@ -289,25 +305,49 @@ QMenu *PlayerMenu::addTrackMenu(QMenu *menu, const QString &title, const QString
             });
         };
 
-        bool anySelected = false;
-        QList<QVariantMap> tracks;
-        for (const QVariant &entry : m_mpv->mpvProperty(QStringLiteral("track-list")).toList()) {
-            const QVariantMap track = entry.toMap();
-            if (track.value(QStringLiteral("type")).toString() != type)
-                continue;
-            tracks.append(track);
-            anySelected |= track.value(QStringLiteral("selected")).toBool();
-        }
-
-        addTrack(tr("Off"), QStringLiteral("no"), !anySelected);
+        const QList<QVariantMap> tracks = m_mpv->tracks(type);
+        addTrack(tr("Off"), QStringLiteral("no"));
         if (!tracks.isEmpty())
             submenu->addSeparator();
-        for (const QVariantMap &track : std::as_const(tracks)) {
-            addTrack(trackLabel(track), QString::number(track.value(QStringLiteral("id")).toLongLong()),
-                     track.value(QStringLiteral("selected")).toBool());
-        }
+        for (const QVariantMap &track : tracks)
+            addTrack(MpvWidget::trackLabel(track), QString::number(track.value(QStringLiteral("id")).toLongLong()));
     });
     return submenu;
+}
+
+void PlayerMenu::cycleTrack(const QString &title, const QString &property)
+{
+    // Steps through Off, #1, #2, ... and wraps around, announcing the result.
+    // The track shown in the other subtitle slot is skipped.
+    const QString taken = otherSubtitleSlot(property);
+    QList<QVariantMap> tracks;
+    for (const QVariantMap &track : m_mpv->tracks(QStringLiteral("sub"))) {
+        if (QString::number(track.value(QStringLiteral("id")).toLongLong()) != taken)
+            tracks.append(track);
+    }
+    const QString current = m_mpv->mpvPropertyString(property);
+    int index = -1; // -1 is "Off"
+    for (int i = 0; i < tracks.size(); ++i) {
+        if (QString::number(tracks[i].value(QStringLiteral("id")).toLongLong()) == current)
+            index = i;
+    }
+    const int next = index + 1 < tracks.size() ? index + 1 : -1;
+    if (next < 0) {
+        m_mpv->setMpvProperty(property, QStringLiteral("no"));
+        Q_EMIT osdRequested(title, tr("Off"));
+        return;
+    }
+    m_mpv->setMpvProperty(property, QString::number(tracks[next].value(QStringLiteral("id")).toLongLong()));
+    Q_EMIT osdRequested(title, MpvWidget::trackLabel(tracks[next]));
+}
+
+QString PlayerMenu::otherSubtitleSlot(const QString &property) const
+{
+    if (property == QLatin1String("sid"))
+        return m_mpv->mpvPropertyString(QStringLiteral("secondary-sid"));
+    if (property == QLatin1String("secondary-sid"))
+        return m_mpv->mpvPropertyString(QStringLiteral("sid"));
+    return {};
 }
 
 void PlayerMenu::bindShortcut(QAction *action, const QKeySequence &shortcut)

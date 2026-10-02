@@ -34,6 +34,20 @@ time the menu opens.
 Volume, seek position, speed, delays and other changes are shown in an
 on-screen display in the top-left corner (white labels, amber values).
 
+When a file opens, the window resizes to 100% of the video resolution
+(shrunk to fit the screen if needed). Use **Window > Window Size** or
+`Alt+1`..`Alt+4` to change it.
+
+### Subtitles
+
+- Subtitles next to the video, or in a `sub`/`subs`/`subtitles` folder, load
+  automatically when their names match the video's.
+- Drop a subtitle file onto the window, or use **Subtitles > Load Subtitle
+  File...**, to add it to the current video.
+- **Dual subtitles:** pick a **Secondary Subtitle Track** (mpv's
+  `secondary-sid`) to show a second language at the top of the frame while
+  the primary track stays at the bottom.
+
 | Input | Action |
 | --- | --- |
 | `Space` | Play / pause |
@@ -43,10 +57,13 @@ on-screen display in the top-left corner (white labels, amber values).
 | `M` | Mute |
 | `C` / `X` / `Z` | Speed +0.1 / -0.1 / reset |
 | `Ctrl+L` | Loop file |
+| `]` / `[` | Subtitle delay +/- 0.5 s |
 | `.` / `,` | Subtitle delay +/- 0.1 s |
 | `Ctrl+.` / `Ctrl+,` | Audio delay +/- 0.1 s |
-| `Alt+H` | Show / hide subtitles |
-| `Alt+Up` / `Alt+Down` | Subtitle size |
+| `Alt+L` / `Alt+Shift+L` | Next subtitle / next secondary subtitle |
+| `Alt+H` / `Alt+Shift+H` | Show / hide subtitles / secondary subtitles |
+| `Alt+Up` / `Alt+Down` | Move subtitles up / down |
+| `Alt+PgUp` / `Alt+PgDn` | Subtitle size |
 | `Ctrl+D` | Deinterlace |
 | `Ctrl+E` | Screenshot (saved to `~/Pictures`) |
 | `Ctrl+O` | Open file |

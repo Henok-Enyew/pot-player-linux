@@ -16,6 +16,7 @@ public:
 
     void openFile(const QString &pathOrUrl);
     void openFileDialog();
+    void loadSubtitle(const QString &path);
     void toggleFullScreen();
     void setAlwaysOnTop(bool onTop);
     // Resizes the window to `scale` times the video's display size.
@@ -33,6 +34,9 @@ protected:
 private:
     void showPropertyOsd(const QString &name, const QVariant &value);
     void showSeekOsd();
+    // Resizes the window to `scale` times `videoSize`, shrunk to fit the screen,
+    // keeping the window centered where it was. Returns false if nothing changed.
+    bool resizeToVideo(const QSize &videoSize, qreal scale);
     Qt::Edges edgesAt(const QPoint &pos) const;
 
     MpvWidget *m_mpv = nullptr;

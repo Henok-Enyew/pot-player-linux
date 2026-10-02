@@ -1,6 +1,7 @@
 #include "MpvWidget.h"
 
 #include <QByteArray>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QMetaObject>
 #include <QOpenGLContext>
@@ -52,7 +53,12 @@ QVariant nodeToVariant(const mpv_node *node)
 
 // Properties whose changes are forwarded through propertyChanged().
 constexpr const char *kObservedProperties[] = {
-    "volume", "mute", "speed", "pause", "audio-delay", "sub-delay", "sub-scale",
+    "volume", "mute", "speed", "pause", "audio-delay", "sub-delay", "sub-scale", "sub-pos",
+};
+
+const QStringList kSubtitleExtensions{
+    QStringLiteral("srt"), QStringLiteral("ass"), QStringLiteral("ssa"), QStringLiteral("vtt"),
+    QStringLiteral("sub"), QStringLiteral("idx"), QStringLiteral("sup"), QStringLiteral("smi"),
 };
 
 } // namespace
@@ -73,6 +79,9 @@ MpvWidget::MpvWidget(QWidget *parent)
     // The OSD is drawn by Qt; mpv only renders subtitles.
     mpv_set_option_string(m_mpv, "osd-level", "0");
     mpv_set_option_string(m_mpv, "osd-bar", "no");
+    // Like PotPlayer, pick up subtitles next to the video or in a subtitle folder.
+    mpv_set_option_string(m_mpv, "sub-auto", "fuzzy");
+    mpv_set_option_string(m_mpv, "sub-file-paths", "sub:subs:subtitles:Subs:Subtitles");
     mpv_set_option_string(m_mpv, "terminal", "yes");
     mpv_set_option_string(m_mpv, "msg-level", "all=warn");
 
@@ -95,13 +104,19 @@ MpvWidget::~MpvWidget()
     mpv_terminate_destroy(m_mpv);
 }
 
-void MpvWidget::loadFile(const QString &pathOrUrl)
+void MpvWidget::loadFile(const QString &pathOrUrl, const QStringList &subtitles)
 {
+    m_pendingSubtitles = subtitles;
     if (!m_renderCtx) {
-        m_pendingFiles = {pathOrUrl};
+        m_pendingFile = pathOrUrl;
         return;
     }
     command({QStringLiteral("loadfile"), pathOrUrl});
+}
+
+void MpvWidget::addSubtitle(const QString &path)
+{
+    command({QStringLiteral("sub-add"), path, QStringLiteral("select")});
 }
 
 void MpvWidget::adjustVolume(double delta)
@@ -151,6 +166,47 @@ void MpvWidget::setMpvProperty(const QString &name, const QString &value)
     mpv_set_property_async(m_mpv, 0, name.toUtf8().constData(), MPV_FORMAT_STRING, &data);
 }
 
+QList<QVariantMap> MpvWidget::tracks(const QString &type) const
+{
+    QList<QVariantMap> result;
+    for (const QVariant &entry : mpvProperty(QStringLiteral("track-list")).toList()) {
+        QVariantMap track = entry.toMap();
+        if (track.value(QStringLiteral("type")).toString() == type)
+            result.append(std::move(track));
+    }
+    return result;
+}
+
+QString MpvWidget::trackLabel(const QVariantMap &track)
+{
+    QString label = QStringLiteral("#%1").arg(track.value(QStringLiteral("id")).toLongLong());
+    const QString title = track.value(QStringLiteral("title")).toString();
+    const QString lang = track.value(QStringLiteral("lang")).toString();
+    const QString codec = track.value(QStringLiteral("codec")).toString();
+    if (!title.isEmpty())
+        label += QStringLiteral(": ") + title;
+    if (!lang.isEmpty())
+        label += QStringLiteral(" [%1]").arg(lang);
+    if (!codec.isEmpty())
+        label += QStringLiteral(" (%1)").arg(codec);
+    if (track.value(QStringLiteral("external")).toBool())
+        label += QStringLiteral(" - external");
+    return label;
+}
+
+bool MpvWidget::isSubtitleFile(const QString &path)
+{
+    return kSubtitleExtensions.contains(QFileInfo(path).suffix().toLower());
+}
+
+QString MpvWidget::subtitleFileFilter()
+{
+    QStringList patterns;
+    for (const QString &ext : kSubtitleExtensions)
+        patterns.append(QStringLiteral("*.") + ext);
+    return tr("Subtitles (%1);;All Files (*)").arg(patterns.join(QLatin1Char(' ')));
+}
+
 void MpvWidget::initializeGL()
 {
     mpv_opengl_init_params glInit{&getProcAddress, nullptr};
@@ -175,8 +231,8 @@ void MpvWidget::initializeGL()
 
     mpv_render_context_set_update_callback(m_renderCtx, &MpvWidget::onMpvRenderUpdate, this);
 
-    for (const QString &file : std::exchange(m_pendingFiles, {}))
-        loadFile(file);
+    if (!m_pendingFile.isEmpty())
+        loadFile(std::exchange(m_pendingFile, {}), m_pendingSubtitles);
 }
 
 void MpvWidget::paintGL()
@@ -227,12 +283,25 @@ void MpvWidget::processMpvEvents()
         case MPV_EVENT_START_FILE:
             m_fileLoaded = false;
             m_seeking = false;
+            m_awaitingVideoSize = true;
             break;
         case MPV_EVENT_FILE_LOADED:
             m_fileLoaded = true;
+            for (const QString &subtitle : std::exchange(m_pendingSubtitles, {}))
+                addSubtitle(subtitle);
             break;
         case MPV_EVENT_SEEK:
             m_seeking = m_fileLoaded;
+            break;
+        case MPV_EVENT_VIDEO_RECONFIG:
+            if (m_awaitingVideoSize) {
+                const QSize size(mpvProperty(QStringLiteral("dwidth")).toInt(),
+                                 mpvProperty(QStringLiteral("dheight")).toInt());
+                if (!size.isEmpty()) {
+                    m_awaitingVideoSize = false;
+                    Q_EMIT videoSizeKnown(size);
+                }
+            }
             break;
         case MPV_EVENT_PLAYBACK_RESTART:
             if (m_seeking) {
