@@ -11,6 +11,7 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("pot-player"));
+    QGuiApplication::setDesktopFileName(QStringLiteral("org.github.potlinux"));
     QApplication::setApplicationDisplayName(QStringLiteral("Pot Player"));
     QApplication::setApplicationVersion(QStringLiteral(APP_VERSION));
 

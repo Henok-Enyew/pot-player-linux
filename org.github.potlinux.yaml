@@ -1,0 +1,111 @@
+# Flatpak manifest for Pot Player.
+#
+# Local build (needs flatpak-builder and the Flathub remote):
+#   flatpak install -y flathub org.kde.Sdk//6.11 org.kde.Platform//6.11
+#   flatpak-builder --user --install --force-clean build-flatpak org.github.potlinux.yaml
+#   flatpak run org.github.potlinux
+#
+# The release workflow builds this into a single-file .flatpak bundle.
+app-id: org.github.potlinux
+runtime: org.kde.Platform
+runtime-version: '6.11'
+sdk: org.kde.Sdk
+command: pot-player
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  # Network streams (http, rtsp, ...).
+  - --share=network
+  # mpv opens files by path and looks for subtitles next to the video.
+  - --filesystem=host:ro
+  # Screenshots (Ctrl+E) are saved to ~/Pictures.
+  - --filesystem=xdg-pictures
+cleanup:
+  - '*.a'
+  - '*.la'
+  - /include
+  - /lib/cmake
+  - /lib/pkgconfig
+  - /share/man
+  - /share/doc
+
+modules:
+  # libmpv and the libraries it needs that the KDE runtime does not ship.
+  # FFmpeg comes from the runtime.
+  - name: libXpresent
+    buildsystem: autotools
+    sources:
+      - type: archive
+        url: https://xorg.freedesktop.org/archive/individual/lib/libXpresent-1.0.2.tar.xz
+        sha256: 4e5b21b4812206a4b223013606ae31170502c1043038777a1ef8f70c09d37602
+
+  - name: libass
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.gz
+        sha256: caab4b993dd7be6187c55623b789ed75dddefea6e65938af134637c732fe094a
+
+  - name: uchardet
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_STATIC=0
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    cleanup:
+      - /bin
+    sources:
+      - type: archive
+        url: https://www.freedesktop.org/software/uchardet/releases/uchardet-0.0.8.tar.xz
+        sha256: e97a60cfc00a1c147a674b097bb1422abd9fa78a2d9ce3f3fdcc2e78a34ac5f0
+
+  - name: libplacebo
+    buildsystem: meson
+    config-opts:
+      - -Ddemos=false
+    sources:
+      - type: git
+        url: https://github.com/haasn/libplacebo.git
+        tag: v7.360.1
+        commit: 719cc95244a1f1d648dd72459822e026e6530f22
+
+  - name: libmpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dalsa=disabled
+      - -Ddebug=false
+      - -Dbuild-date=false
+      - -Dmanpage-build=disabled
+    cleanup:
+      - /share/bash-completion
+      - /share/fish
+      - /share/zsh
+      - /share/icons
+      - /share/applications
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.41.0.tar.gz
+        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
+
+  - name: pot-player
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    post-install:
+      - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/LICENSE
+    sources:
+      - type: dir
+        path: .
+        skip:
+          - build
+          - build-appimage
+          - build-flatpak
+          - dist

@@ -2,6 +2,20 @@
 
 A lightweight desktop media player for Linux built with **Qt 6** and **libmpv**.
 
+## Install
+
+Each [GitHub Release](https://github.com/henok-enyew/pot-player-linux/releases)
+ships three packages:
+
+| Package | Install |
+| --- | --- |
+| AppImage | `chmod +x Pot_Player-*.AppImage && ./Pot_Player-*.AppImage` |
+| Flatpak | `flatpak install --user Pot_Player-*.flatpak` (needs the Flathub remote for the KDE runtime) |
+| Fedora RPM | `sudo dnf install ./pot-player-*.x86_64.rpm` |
+
+The AppImage is built on Ubuntu 24.04, so it needs glibc 2.39 or newer
+(Ubuntu 24.04+, Fedora 40+, Debian 13+). On older systems use the Flatpak.
+
 ## Building
 
 ### Dependencies
@@ -18,6 +32,9 @@ cmake -S . -B build -G Ninja
 cmake --build build
 ./build/pot-player /path/to/video.mkv [more files to queue...]
 ```
+
+`cmake --install build` installs the binary together with the desktop entry,
+icon and AppStream metadata (app ID `org.github.potlinux`).
 
 Files can also be opened by dragging them onto the window (the first plays,
 the rest are queued) or onto the playlist drawer (queued where dropped).
@@ -101,3 +118,29 @@ When a file opens, the window resizes to 100% of the video resolution
 | Right-click | Context menu |
 | Drag inside window | Move window |
 | Drag window edge | Resize window |
+
+## Packaging and releases
+
+| Format | Recipe | Build locally |
+| --- | --- | --- |
+| AppImage | [`packaging/appimage/build-appimage.sh`](packaging/appimage/build-appimage.sh) (linuxdeploy + linuxdeploy-plugin-qt) | `VERSION=0.1.0 packaging/appimage/build-appimage.sh` (also needs `qmake6`, optionally `qt6-wayland`) |
+| Flatpak | [`org.github.potlinux.yaml`](org.github.potlinux.yaml) (KDE 6.11 runtime, builds libmpv) | `flatpak-builder --user --install --force-clean build-flatpak org.github.potlinux.yaml` |
+| RPM | [`packaging/rpm/pot-player.spec`](packaging/rpm/pot-player.spec) | see the comment at the top of the spec |
+
+Packages land in `dist/`. The
+[Release workflow](.github/workflows/release.yml) builds all three. It runs
+on pull requests that touch packaging, and it can be started by hand from
+the Actions tab; both of those only build. Pushing a `v*` tag also
+publishes a GitHub Release with the packages and a `SHA256SUMS` file:
+
+1. Set `VERSION` in `project()` in `CMakeLists.txt` (the tag must match it),
+   add a `<release>` entry to
+   [`packaging/linux/org.github.potlinux.metainfo.xml`](packaging/linux/org.github.potlinux.metainfo.xml)
+   and commit.
+2. `git tag v0.1.0 && git push origin v0.1.0`
+
+A tag with a suffix such as `v0.2.0-rc1` is published as a pre-release.
+
+## License
+
+[MIT](LICENSE)
