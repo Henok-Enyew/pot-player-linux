@@ -58,11 +58,10 @@ ControlBar::ControlBar(MpvWidget *mpv, QWidget *parent)
     buttons->addWidget(fullScreen);
 
     connect(open, &QToolButton::clicked, this, &ControlBar::openRequested);
-    connect(previous, &QToolButton::clicked, this, [this] { m_mpv->command({QStringLiteral("playlist-prev")}); });
-    connect(next, &QToolButton::clicked, this, [this] { m_mpv->command({QStringLiteral("playlist-next")}); });
-    connect(stop, &QToolButton::clicked, this, [this] { m_mpv->command({QStringLiteral("stop")}); });
-    connect(m_playButton, &QToolButton::clicked, this,
-            [this] { m_mpv->command({QStringLiteral("cycle"), QStringLiteral("pause")}); });
+    connect(previous, &QToolButton::clicked, m_mpv, &MpvWidget::playlistPrev);
+    connect(next, &QToolButton::clicked, m_mpv, &MpvWidget::playlistNext);
+    connect(stop, &QToolButton::clicked, m_mpv, &MpvWidget::stop);
+    connect(m_playButton, &QToolButton::clicked, m_mpv, &MpvWidget::togglePause);
     connect(m_muteButton, &QToolButton::clicked, this,
             [this] { m_mpv->command({QStringLiteral("cycle"), QStringLiteral("mute")}); });
     connect(m_volumeSlider, &QSlider::valueChanged, this,
@@ -112,7 +111,20 @@ void ControlBar::onPropertyUpdated(const QString &name, const QVariant &value)
         m_seekBar->setDuration(m_duration);
         updateTimeLabel();
     } else if (name == QLatin1String("pause")) {
-        m_playButton->setIcon(skinIcon(value.toBool() ? IconType::Play : IconType::Pause));
+        m_paused = value.toBool();
+        updatePlayButton();
+    } else if (name == QLatin1String("idle-active")) {
+        m_idle = value.toBool();
+        updatePlayButton();
+        if (m_idle) {
+            // Stopped: rewind the seekbar instead of keeping the last position.
+            m_position = 0;
+            m_duration = 0;
+            m_seekBar->setDuration(0);
+            m_seekBar->setPosition(0);
+            m_seekBar->setChapters({});
+            updateTimeLabel();
+        }
     } else if (name == QLatin1String("mute")) {
         m_muteButton->setIcon(skinIcon(value.toBool() ? IconType::Muted : IconType::Volume));
     } else if (name == QLatin1String("volume")) {
@@ -124,6 +136,13 @@ void ControlBar::onPropertyUpdated(const QString &name, const QVariant &value)
             chapters.append(chapter.toMap().value(QStringLiteral("time")).toDouble());
         m_seekBar->setChapters(chapters);
     }
+}
+
+void ControlBar::updatePlayButton()
+{
+    // Nothing plays while idle, even though mpv's pause flag is off.
+    const bool playing = !m_paused && !m_idle;
+    m_playButton->setIcon(skinIcon(playing ? IconType::Pause : IconType::Play));
 }
 
 void ControlBar::updateTimeLabel()

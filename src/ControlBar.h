@@ -28,6 +28,7 @@ Q_SIGNALS:
 private:
     QToolButton *addButton(const QString &objectName, const QString &toolTip, IconType icon);
     void onPropertyUpdated(const QString &name, const QVariant &value);
+    void updatePlayButton();
     void updateTimeLabel();
 
     MpvWidget *m_mpv;
@@ -39,4 +40,6 @@ private:
     QLabel *m_timeLabel;
     double m_position = 0;
     double m_duration = 0;
+    bool m_paused = false;
+    bool m_idle = true;
 };

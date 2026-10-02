@@ -28,6 +28,18 @@ public:
     void addSubtitle(const QString &path);
     void adjustVolume(double delta);
 
+    // Transport controls. Unlike the raw mpv commands these also work after
+    // stop(): the playlist is kept, and playing resumes from the last entry.
+    void play();
+    void pause();
+    void togglePause();
+    // Stops playback and blanks the video surface, keeping the playlist.
+    void stop();
+    void playlistNext();
+    void playlistPrev();
+    // True while nothing is loaded (startup, after stop() or an empty playlist).
+    bool isIdle() const;
+
     // Runs an mpv command asynchronously, e.g. {"seek", "5", "relative"}.
     void command(const QStringList &args);
 
@@ -71,6 +83,8 @@ private Q_SLOTS:
 private:
     static void onMpvWakeup(void *ctx);
     static void onMpvRenderUpdate(void *ctx);
+    // Plays playlist entry `index`, clamped to the playlist. Returns false if it is empty.
+    bool playIndex(int index);
 
     mpv_handle *m_mpv = nullptr;
     mpv_render_context *m_renderCtx = nullptr;
@@ -84,4 +98,8 @@ private:
     bool m_fileLoaded = false;
     bool m_seeking = false;
     bool m_awaitingVideoSize = false;
+    // Mirrors idle-active for painting, which must not block on mpv.
+    bool m_idle = true;
+    // Playlist entry that played last; mpv forgets it on stop.
+    int m_lastPlaylistPos = -1;
 };

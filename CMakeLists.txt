@@ -21,9 +21,11 @@ find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
 
-add_executable(pot-player
+option(POTPLAYER_BUILD_TESTS "Build the integration tests (need an X or Wayland display)" OFF)
+
+# Everything but main(), so the tests can drive the real window.
+add_library(pot-player-core OBJECT
     resources/skin.qrc
-    src/main.cpp
     src/ControlBar.cpp
     src/ControlBar.h
     src/Icons.cpp
@@ -52,16 +54,18 @@ add_executable(pot-player
     src/TitleBar.h
 )
 
-target_compile_definitions(pot-player PRIVATE
+target_include_directories(pot-player-core PUBLIC src)
+
+target_compile_definitions(pot-player-core PUBLIC
     APP_VERSION="${PROJECT_VERSION}"
     QT_NO_KEYWORDS
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(pot-player PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(pot-player-core PUBLIC -Wall -Wextra -Wpedantic)
 endif()
 
-target_link_libraries(pot-player PRIVATE
+target_link_libraries(pot-player-core PUBLIC
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
@@ -69,6 +73,14 @@ target_link_libraries(pot-player PRIVATE
     Qt6::OpenGLWidgets
     PkgConfig::MPV
 )
+
+add_executable(pot-player src/main.cpp)
+target_link_libraries(pot-player PRIVATE pot-player-core)
+
+if(POTPLAYER_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 install(TARGETS pot-player RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/linux/org.github.potlinux.desktop

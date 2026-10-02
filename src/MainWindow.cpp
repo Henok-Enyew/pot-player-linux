@@ -9,6 +9,7 @@
 #include "ThumbnailPopup.h"
 #include "TitleBar.h"
 
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QDragEnterEvent>
@@ -40,6 +41,25 @@ constexpr int kIdleHideMs = 2000;
 // Distance between the seekbar and the thumbnail popup above it.
 constexpr int kPopupGap = 6;
 
+// Keys that a focused list keeps for its own navigation instead of letting the
+// player's shortcuts (volume, fullscreen) take them.
+bool isListNavigationKey(const QKeyEvent *event)
+{
+    if (event->modifiers() & ~(Qt::ShiftModifier | Qt::KeypadModifier))
+        return false;
+    switch (event->key()) {
+    case Qt::Key_Up:
+    case Qt::Key_Down:
+    case Qt::Key_Home:
+    case Qt::Key_End:
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+        return true;
+    default:
+        return false;
+    }
+}
+
 QString formatDelay(double seconds)
 {
     const long long ms = std::llround(seconds * 1000);
@@ -55,6 +75,9 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowFlag(Qt::FramelessWindowHint);
     setAcceptDrops(true);
     setMinimumSize(420, 260);
+    // Clicking the video takes keyboard focus back from the playlist, so the
+    // arrow keys control the player again.
+    m_mpv->setFocusPolicy(Qt::ClickFocus);
 
     m_root = new QWidget(this);
     m_root->setObjectName(QStringLiteral("RootWidget"));
@@ -144,6 +167,11 @@ void MainWindow::setupPlaylist()
     connect(m_drawer, &PlaylistDrawer::clearRequested, this,
             [this] { m_mpv->command({QStringLiteral("playlist-clear")}); });
     connect(m_drawer, &PlaylistDrawer::expandedChanged, m_controlBar, &ControlBar::setPlaylistChecked);
+    connect(m_drawer, &PlaylistDrawer::expandedChanged, this, [this](bool expanded) {
+        // Don't leave the keyboard on a list that is going away.
+        if (!expanded && m_drawer->isAncestorOf(QApplication::focusWidget()))
+            m_mpv->setFocus();
+    });
 }
 
 void MainWindow::setupThumbnails()
@@ -337,6 +365,15 @@ void MainWindow::updateChrome()
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    // A shortcut fires unless the focused widget claims the key first. Let a
+    // focused list (the playlist) keep its navigation keys, so Up/Down move the
+    // selection instead of changing the volume.
+    if (event->type() == QEvent::ShortcutOverride && qobject_cast<QAbstractItemView *>(watched)
+        && static_cast<QWidget *>(watched)->window() == this
+        && isListNavigationKey(static_cast<QKeyEvent *>(event))) {
+        event->accept();
+        return true;
+    }
     if (event->type() == QEvent::MouseMove && watched->isWidgetType()
         && static_cast<QWidget *>(watched)->window() == this) {
         onMouseActivity(static_cast<QMouseEvent *>(event)->globalPosition().toPoint());
@@ -360,6 +397,24 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     // Everything else is a QAction shortcut registered by PlayerMenu.
     switch (event->key()) {
+    case Qt::Key_MediaPlay:
+        m_mpv->play();
+        break;
+    case Qt::Key_MediaPause:
+        m_mpv->pause();
+        break;
+    case Qt::Key_MediaTogglePlayPause:
+        m_mpv->togglePause();
+        break;
+    case Qt::Key_MediaStop:
+        m_mpv->stop();
+        break;
+    case Qt::Key_MediaNext:
+        m_mpv->playlistNext();
+        break;
+    case Qt::Key_MediaPrevious:
+        m_mpv->playlistPrev();
+        break;
     case Qt::Key_Enter:
         toggleFullScreen();
         break;
@@ -376,6 +431,11 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 
 void MainWindow::wheelEvent(QWheelEvent *event)
 {
+    // The playlist scrolls itself; at its ends the leftover wheel events land here.
+    if (m_drawer->isVisible() && m_drawer->rect().contains(m_drawer->mapFromGlobal(event->globalPosition().toPoint()))) {
+        event->ignore();
+        return;
+    }
     // One standard wheel notch is 120 units; scale to support high-resolution wheels.
     const int delta = event->angleDelta().y();
     if (delta != 0)

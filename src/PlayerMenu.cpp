@@ -91,9 +91,9 @@ void PlayerMenu::buildAudioMenu()
     QMenu *audio = addMenu(tr("Audio"));
     addTrackMenu(audio, tr("Audio Track"), QStringLiteral("audio"), QStringLiteral("aid"));
     audio->addSeparator();
-    addCommand(audio, tr("Volume Up"), {QStringLiteral("add"), QStringLiteral("volume"), QStringLiteral("5")},
+    addCommand(audio, tr("Volume Up (+2%)"), {QStringLiteral("add"), QStringLiteral("volume"), QStringLiteral("2")},
                QKeySequence(Qt::Key_Up));
-    addCommand(audio, tr("Volume Down"), {QStringLiteral("add"), QStringLiteral("volume"), QStringLiteral("-5")},
+    addCommand(audio, tr("Volume Down (-2%)"), {QStringLiteral("add"), QStringLiteral("volume"), QStringLiteral("-2")},
                QKeySequence(Qt::Key_Down));
     // Mute is observed by MainWindow, which shows its own OSD message.
     addToggle(audio, tr("Mute"), QStringLiteral("mute"), QKeySequence(Qt::Key_M), false);
@@ -163,10 +163,13 @@ void PlayerMenu::buildPlaybackMenu()
 
     QMenu *playback = addMenu(tr("Playback"));
     // Pause is observed by MainWindow, which shows its own OSD message.
-    addToggle(playback, tr("Pause"), QStringLiteral("pause"), QKeySequence(Qt::Key_Space), false);
-    addCommand(playback, tr("Stop"), {QStringLiteral("stop")});
-    addCommand(playback, tr("Previous File"), {QStringLiteral("playlist-prev")}, QKeySequence(Qt::Key_PageUp));
-    addCommand(playback, tr("Next File"), {QStringLiteral("playlist-next")}, QKeySequence(Qt::Key_PageDown));
+    // Goes through MpvWidget so that it also restarts playback after Stop.
+    QAction *pause = addItem(playback, tr("Pause"), [this] { m_mpv->togglePause(); }, QKeySequence(Qt::Key_Space));
+    pause->setCheckable(true);
+    m_toggles.append({pause, QStringLiteral("pause"), QStringLiteral("no")});
+    addItem(playback, tr("Stop"), [this] { m_mpv->stop(); });
+    addItem(playback, tr("Previous File"), [this] { m_mpv->playlistPrev(); }, QKeySequence(Qt::Key_PageUp));
+    addItem(playback, tr("Next File"), [this] { m_mpv->playlistNext(); }, QKeySequence(Qt::Key_PageDown));
     playback->addSeparator();
     addCommand(playback, tr("Seek Forward 5s"), {QStringLiteral("seek"), QStringLiteral("5"), QStringLiteral("relative")},
                QKeySequence(Qt::Key_Right));
@@ -176,6 +179,10 @@ void PlayerMenu::buildPlaybackMenu()
                QKeySequence(Qt::CTRL | Qt::Key_Right));
     addCommand(playback, tr("Seek Backward 30s"), {QStringLiteral("seek"), QStringLiteral("-30"), QStringLiteral("relative")},
                QKeySequence(Qt::CTRL | Qt::Key_Left));
+    addCommand(playback, tr("Seek Forward 60s"), {QStringLiteral("seek"), QStringLiteral("60"), QStringLiteral("relative")},
+               QKeySequence(Qt::SHIFT | Qt::Key_Right));
+    addCommand(playback, tr("Seek Backward 60s"), {QStringLiteral("seek"), QStringLiteral("-60"), QStringLiteral("relative")},
+               QKeySequence(Qt::SHIFT | Qt::Key_Left));
     playback->addSeparator();
     QMenu *speed = addChoices(playback, tr("Speed"), QStringLiteral("speed"), {
         {QStringLiteral("0.25x"), QStringLiteral("0.25")},
