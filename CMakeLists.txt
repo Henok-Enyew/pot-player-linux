@@ -26,6 +26,10 @@ add_executable(pot-player
     src/MainWindow.h
     src/MpvWidget.cpp
     src/MpvWidget.h
+    src/OsdWidget.cpp
+    src/OsdWidget.h
+    src/PlayerMenu.cpp
+    src/PlayerMenu.h
 )
 
 target_compile_definitions(pot-player PRIVATE
