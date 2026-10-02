@@ -1,5 +1,6 @@
 #include "Icons.h"
 
+#include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
@@ -103,6 +104,18 @@ void drawIcon(QPainter &p, IconType type)
         p.drawLine(QPointF(11.5, 3.5), QPointF(12, 6));
         p.drawPolyline(QPolygonF({{5.5, 6}, {6.5, 16.5}, {13.5, 16.5}, {14.5, 6}}));
         break;
+    case IconType::Folder:
+        p.drawPath(polygon({{2.5, 4.5}, {8, 4.5}, {9.5, 6.5}, {17.5, 6.5}, {17.5, 15.5}, {2.5, 15.5}}));
+        p.drawLine(QPointF(2.5, 8.5), QPointF(17.5, 8.5));
+        break;
+    case IconType::Url:
+        // A globe: outline, meridian and two parallels.
+        p.drawEllipse(QPointF(10, 10), 7, 7);
+        p.drawEllipse(QPointF(10, 10), 3, 7);
+        p.drawLine(QPointF(3, 10), QPointF(17, 10));
+        p.drawLine(QPointF(4.5, 6.5), QPointF(15.5, 6.5));
+        p.drawLine(QPointF(4.5, 13.5), QPointF(15.5, 13.5));
+        break;
     }
 }
 
@@ -128,4 +141,36 @@ QIcon skinIcon(IconType type)
     icon.addPixmap(renderIcon(type, kActiveColor), QIcon::Active);
     icon.addPixmap(renderIcon(type, kDisabledColor), QIcon::Disabled);
     return icon;
+}
+
+QPixmap appLogo(int size, qreal devicePixelRatio)
+{
+    QPixmap pixmap(QSize(size, size) * devicePixelRatio);
+    pixmap.setDevicePixelRatio(devicePixelRatio);
+    pixmap.fill(Qt::transparent);
+    QPainter p(&pixmap);
+    p.setRenderHint(QPainter::Antialiasing);
+    // Drawn on the 256x256 grid of packaging/linux/org.github.potlinux.svg.
+    p.scale(size / 256.0, size / 256.0);
+
+    QLinearGradient background(0, 16, 0, 240);
+    background.setColorAt(0, QColor(0x2B, 0x2B, 0x2B));
+    background.setColorAt(1, QColor(0x15, 0x15, 0x15));
+    p.setPen(QPen(QColor(0x3A, 0x3A, 0x3A), 1));
+    p.setBrush(background);
+    p.drawRoundedRect(QRectF(16.5, 16.5, 223, 223), 47.5, 47.5);
+
+    QLinearGradient amber(100, 76, 184, 180);
+    amber.setColorAt(0, QColor(0xFF, 0xC8, 0x4A));
+    amber.setColorAt(1, QColor(0xF2, 0x9A, 0x00));
+    p.setPen(QPen(QBrush(amber), 14, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(amber);
+    p.drawPath(polygon({{100, 76}, {184, 128}, {100, 180}}));
+
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0x3D, 0x3D, 0x3D));
+    p.drawRoundedRect(QRectF(56, 200, 144, 8), 4, 4);
+    p.setBrush(QColor(0xFF, 0xB4, 0x1E));
+    p.drawRoundedRect(QRectF(56, 200, 88, 8), 4, 4);
+    return pixmap;
 }

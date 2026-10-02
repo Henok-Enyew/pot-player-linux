@@ -36,11 +36,19 @@ cmake --build build
 `cmake --install build` installs the binary together with the desktop entry,
 icon and AppStream metadata (app ID `org.github.potlinux`).
 
+Without arguments the player opens on a start screen with **Open File**,
+**Open Folder** (queues the media files in a folder and its subfolders, in
+natural order), **Open URL / Stream** and **Open Playlist** (`.m3u`, `.m3u8`,
+`.pls`); the same actions are in the right-click menu. Files and folders can
+also be dragged onto the window (the first plays, the rest are queued) or
+onto the playlist drawer (queued where dropped).
+
 ### Tests
 
-The integration tests drive the real window through its buttons and hotkeys.
-They need Qt Test (part of `qt6-base-dev` / `qt6-qtbase-devel`), `ffmpeg` to
-generate a test clip, and a display, e.g. Xvfb:
+The integration tests drive the real window through its buttons, hotkeys,
+dialogs and drop zone. They need Qt Test (part of `qt6-base-dev` /
+`qt6-qtbase-devel`), `ffmpeg` to generate a test clip, and a display, e.g.
+Xvfb:
 
 ```sh
 cmake -S . -B build -G Ninja -DPOTPLAYER_BUILD_TESTS=ON
@@ -48,15 +56,16 @@ cmake --build build
 xvfb-run -a ctest --test-dir build --output-on-failure
 ```
 
-Files can also be opened by dragging them onto the window (the first plays,
-the rest are queued) or onto the playlist drawer (queued where dropped).
-
 ## Skin
 
 The interface uses a PotPlayer-style flat dark skin defined in
 [`resources/skin/potplayer-dark.qss`](resources/skin/potplayer-dark.qss), applied
 on top of Qt's Fusion style with a matching dark palette:
 
+- **Start screen** shown while nothing is loaded (on startup, after Stop,
+  or once the playlist is emptied): logo, open actions and a drop zone. It
+  fades out as playback starts and adapts to small windows by dropping the
+  logo and labels, down to icon-only buttons.
 - **Title bar** with the media title and minimize / maximize / close buttons.
   Drag it to move the window; double-click to maximize.
 - **Control bar** with open, previous, play/pause, stop and next buttons, the

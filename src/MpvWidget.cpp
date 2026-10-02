@@ -139,6 +139,17 @@ void MpvWidget::loadFiles(const QStringList &files, const QStringList &subtitles
         command(cmd);
 }
 
+void MpvWidget::loadPlaylist(const QString &path)
+{
+    m_pendingSubtitles.clear();
+    const QStringList cmd{QStringLiteral("loadlist"), path, QStringLiteral("replace")};
+    if (!m_renderCtx) {
+        m_pendingLoads = {cmd};
+        return;
+    }
+    command(cmd);
+}
+
 void MpvWidget::insertFiles(const QStringList &files, int row)
 {
     if (!m_renderCtx) {
@@ -419,6 +430,7 @@ void MpvWidget::processMpvEvents()
             m_fileLoaded = false;
             m_seeking = false;
             m_awaitingVideoSize = true;
+            Q_EMIT fileStarted();
             break;
         case MPV_EVENT_FILE_LOADED:
             m_fileLoaded = true;

@@ -5,13 +5,12 @@
 #include "Icons.h"
 #include "MainWindow.h"
 #include "MpvWidget.h"
+#include "TestClip.h"
 
 #include <QApplication>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
-#include <QProcess>
-#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
@@ -69,20 +68,10 @@ private:
 
 void TransportTest::initTestCase()
 {
-    const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
-    if (ffmpeg.isEmpty())
-        QSKIP("ffmpeg is needed to generate the test clip");
     QVERIFY(m_dir.isValid());
-    // Long enough that seeks never reach the end; a keyframe every second keeps seeks exact.
     m_clip = m_dir.filePath(QStringLiteral("clip.mkv"));
-    QProcess process;
-    process.start(ffmpeg, {QStringLiteral("-loglevel"), QStringLiteral("error"),
-                           QStringLiteral("-f"), QStringLiteral("lavfi"),
-                           QStringLiteral("-i"), QStringLiteral("testsrc=duration=600:size=64x48:rate=2"),
-                           QStringLiteral("-c:v"), QStringLiteral("mpeg4"), QStringLiteral("-g"), QStringLiteral("2"),
-                           m_clip});
-    QVERIFY(process.waitForFinished(60000));
-    QCOMPARE(process.exitCode(), 0);
+    if (!makeTestClip(m_clip))
+        QSKIP("ffmpeg is needed to generate the test clip");
 }
 
 void TransportTest::init()

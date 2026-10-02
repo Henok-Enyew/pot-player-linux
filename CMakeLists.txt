@@ -28,10 +28,14 @@ add_library(pot-player-core OBJECT
     resources/skin.qrc
     src/ControlBar.cpp
     src/ControlBar.h
+    src/EmptyStateWidget.cpp
+    src/EmptyStateWidget.h
     src/Icons.cpp
     src/Icons.h
     src/MainWindow.cpp
     src/MainWindow.h
+    src/MediaFiles.cpp
+    src/MediaFiles.h
     src/MpvHelpers.h
     src/MpvWidget.cpp
     src/MpvWidget.h

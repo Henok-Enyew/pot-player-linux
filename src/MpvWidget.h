@@ -22,6 +22,8 @@ public:
     void loadFile(const QString &pathOrUrl, const QStringList &subtitles = {});
     // Replaces the playlist: plays the first file and queues the rest.
     void loadFiles(const QStringList &files, const QStringList &subtitles = {});
+    // Replaces the playlist with the entries of a playlist file (.m3u, .pls, ...).
+    void loadPlaylist(const QString &path);
     // Queues files at playlist index `row` (-1 appends). Starts playback if idle.
     void insertFiles(const QStringList &files, int row = -1);
     // Adds an external subtitle file to the current file and selects it.
@@ -67,6 +69,8 @@ Q_SIGNALS:
     // one; the value is invalid while the property is unavailable. Use this for
     // widgets that mirror player state.
     void propertyUpdated(const QString &name, const QVariant &value);
+    // Emitted as mpv starts opening a playlist entry.
+    void fileStarted();
     // Emitted once playback resumes after a user seek.
     void seeked();
     // Emitted once per file, when the video's display size is first known.

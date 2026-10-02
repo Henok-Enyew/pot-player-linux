@@ -159,6 +159,9 @@ void PlayerMenu::buildSubtitleMenu()
 void PlayerMenu::buildPlaybackMenu()
 {
     addItem(this, tr("Open File..."), [this] { m_window->openFileDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_O));
+    addItem(this, tr("Open Folder..."), [this] { m_window->openFolderDialog(); });
+    addItem(this, tr("Open URL / Stream..."), [this] { m_window->openUrlDialog(); });
+    addItem(this, tr("Open Playlist..."), [this] { m_window->openPlaylistDialog(); });
     addSeparator();
 
     QMenu *playback = addMenu(tr("Playback"));

@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 #include "ControlBar.h"
+#include "EmptyStateWidget.h"
+#include "MediaFiles.h"
 #include "MpvWidget.h"
 #include "OsdWidget.h"
 #include "PlayerMenu.h"
@@ -11,12 +13,14 @@
 
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QClipboard>
 #include <QContextMenuEvent>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeyEvent>
 #include <QMimeData>
 #include <QMouseEvent>
@@ -99,6 +103,8 @@ MainWindow::MainWindow(QWidget *parent)
     layout->addWidget(m_controlBar);
     setCentralWidget(m_root);
 
+    // Created before the OSD so that OSD messages draw on top of it.
+    m_emptyState = new EmptyStateWidget(m_mpv);
     m_osd = new OsdWidget(m_mpv);
     m_menu = new PlayerMenu(m_mpv, this);
     m_titleBar->setTitle(QApplication::applicationDisplayName());
@@ -122,6 +128,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_menu, &PlayerMenu::osdRequested, m_osd,
             [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
     connect(m_controlBar, &ControlBar::openRequested, this, &MainWindow::openFileDialog);
+    connect(m_emptyState, &EmptyStateWidget::openFileRequested, this, &MainWindow::openFileDialog);
+    connect(m_emptyState, &EmptyStateWidget::openFolderRequested, this, &MainWindow::openFolderDialog);
+    connect(m_emptyState, &EmptyStateWidget::openUrlRequested, this, &MainWindow::openUrlDialog);
+    connect(m_emptyState, &EmptyStateWidget::openPlaylistRequested, this, &MainWindow::openPlaylistDialog);
+    connect(m_emptyState, &EmptyStateWidget::urlsDropped, this, &MainWindow::openUrls);
+    connect(m_mpv, &MpvWidget::fileStarted, m_emptyState, [this] { m_emptyState->setActive(false); });
     connect(m_controlBar, &ControlBar::fullScreenRequested, this, &MainWindow::toggleFullScreen);
     connect(m_controlBar, &ControlBar::playlistToggled, this, &MainWindow::setPlaylistVisible);
 
@@ -205,7 +217,12 @@ void MainWindow::setupThumbnails()
 
 void MainWindow::onStateUpdated(const QString &name, const QVariant &value)
 {
-    if (name == QLatin1String("playlist")) {
+    if (name == QLatin1String("idle-active")) {
+        // Nothing loaded (startup, stop, or the playlist ran out or was cleared).
+        // The report can arrive after the next file already started, so check again.
+        if (value.toBool() && m_mpv->isIdle())
+            m_emptyState->setActive(true);
+    } else if (name == QLatin1String("playlist")) {
         m_drawer->setEntries(value.toList());
     } else if (name == QLatin1String("path")) {
         // Previews come from a second decoder, so only local files are worth it.
@@ -226,9 +243,86 @@ void MainWindow::openFiles(const QStringList &files)
 
 void MainWindow::openFileDialog()
 {
-    const QStringList files = QFileDialog::getOpenFileNames(this, tr("Open Files"));
+    const QStringList files = QFileDialog::getOpenFileNames(this, tr("Open Files"), {}, MediaFiles::mediaFileFilter());
     if (!files.isEmpty())
         openFiles(files);
+}
+
+void MainWindow::openFolderDialog()
+{
+    const QString folder = QFileDialog::getExistingDirectory(this, tr("Open Folder"));
+    if (folder.isEmpty())
+        return;
+    const QStringList files = MediaFiles::mediaFilesInFolder(folder);
+    if (files.isEmpty())
+        m_osd->showValue(tr("No media files in"), QFileInfo(folder).fileName());
+    else
+        openFiles(files);
+}
+
+void MainWindow::openUrlDialog()
+{
+    QInputDialog dialog(this);
+    dialog.setWindowTitle(tr("Open URL / Stream"));
+    dialog.setLabelText(tr("Video or audio URL (http, https, rtsp, rtmp, ...):"));
+    dialog.setOkButtonText(tr("Open"));
+    dialog.resize(520, dialog.sizeHint().height());
+    // Offer a URL that is already on the clipboard.
+    const QString clipboard = QGuiApplication::clipboard()->text().trimmed();
+    if (clipboard.contains(QLatin1String("://")) && !clipboard.contains(QLatin1Char('\n')))
+        dialog.setTextValue(clipboard);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const QString text = dialog.textValue().trimmed();
+    if (text.isEmpty())
+        return;
+    // Accept "example.com/video.mp4" as well as full URLs, which mpv takes as typed.
+    const bool hasScheme = text.contains(QLatin1String("://"));
+    const QUrl url = hasScheme ? QUrl(text) : QUrl::fromUserInput(text);
+    if (!url.isValid() || url.scheme().isEmpty()) {
+        m_osd->showValue(tr("Invalid URL"), text);
+        return;
+    }
+    if (url.isLocalFile())
+        openFile(url.toLocalFile());
+    else
+        openFile(hasScheme ? text : url.toString());
+}
+
+void MainWindow::openPlaylistDialog()
+{
+    const QString file = QFileDialog::getOpenFileName(this, tr("Open Playlist"), {}, MediaFiles::playlistFileFilter());
+    if (!file.isEmpty())
+        m_mpv->loadPlaylist(file);
+}
+
+void MainWindow::openUrls(const QList<QUrl> &urls)
+{
+    // Subtitle files are added to the playing video, or to a video dropped with them.
+    QStringList media;
+    QStringList subtitles;
+    for (const QUrl &url : urls) {
+        if (!url.isLocalFile()) {
+            media.append(url.toString());
+            continue;
+        }
+        const QString path = url.toLocalFile();
+        if (QFileInfo(path).isDir())
+            media.append(MediaFiles::mediaFilesInFolder(path));
+        else if (MpvWidget::isSubtitleFile(path))
+            subtitles.append(path);
+        else
+            media.append(path);
+    }
+    if (!media.isEmpty()) {
+        m_mpv->loadFiles(media, subtitles);
+    } else if (!subtitles.isEmpty()) {
+        for (const QString &subtitle : std::as_const(subtitles))
+            loadSubtitle(subtitle);
+    } else {
+        m_osd->showValue(tr("No media files found"));
+    }
 }
 
 bool MainWindow::isPlaylistVisible() const
@@ -488,22 +582,7 @@ void MainWindow::dropEvent(QDropEvent *event)
     const QList<QUrl> urls = event->mimeData()->urls();
     if (urls.isEmpty())
         return;
-    // Subtitle files are added to the playing video, or to a video dropped with them.
-    QString media;
-    QStringList subtitles;
-    for (const QUrl &url : urls) {
-        const QString path = url.isLocalFile() ? url.toLocalFile() : url.toString();
-        if (url.isLocalFile() && MpvWidget::isSubtitleFile(path))
-            subtitles.append(path);
-        else if (media.isEmpty())
-            media = path;
-    }
-    if (!media.isEmpty()) {
-        m_mpv->loadFile(media, subtitles);
-    } else {
-        for (const QString &subtitle : std::as_const(subtitles))
-            loadSubtitle(subtitle);
-    }
+    openUrls(urls);
     event->acceptProposedAction();
 }
 

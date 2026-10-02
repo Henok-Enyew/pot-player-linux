@@ -95,6 +95,53 @@ SeekBar {
     min-height: 18px;
 }
 
+/* ---- Empty state (start screen) ----------------------------------------- */
+
+#EmptyStateTitle {
+    font-size: 20pt;
+    font-weight: bold;
+}
+
+#EmptyStateTitle[compact="true"] {
+    font-size: 14pt;
+}
+
+#EmptyStateHint {
+    color: #7a7a7a;
+    font-size: 9pt;
+}
+
+#EmptyStateHint[dropTarget="true"] {
+    color: #ffb41e;
+}
+
+QPushButton[emptyStateAction="true"] {
+    background: #262626;
+    color: #d6d6d6;
+    border: 1px solid #343434;
+    border-radius: 6px;
+    padding: 9px 18px 9px 14px;
+    min-width: 168px;
+    min-height: 22px;
+    text-align: left;
+    font-size: 10pt;
+}
+
+QPushButton[emptyStateAction="true"][compact="true"] {
+    min-width: 0;
+    padding: 9px;
+}
+
+QPushButton[emptyStateAction="true"]:hover {
+    background: #2e2a22;
+    border-color: #ffb41e;
+    color: #ffffff;
+}
+
+QPushButton[emptyStateAction="true"]:pressed {
+    background: #3a3122;
+}
+
 /* ---- Volume slider ------------------------------------------------------ */
 
 QSlider#VolumeSlider::groove:horizontal {

@@ -1,5 +1,6 @@
 #include "PlaylistDrawer.h"
 #include "Icons.h"
+#include "MediaFiles.h"
 #include "MpvWidget.h"
 
 #include <QDragEnterEvent>
@@ -27,7 +28,9 @@ QStringList mediaFiles(const QMimeData *mime)
     QStringList files;
     for (const QUrl &url : mime->urls()) {
         const QString path = url.isLocalFile() ? url.toLocalFile() : url.toString();
-        if (!url.isLocalFile() || !MpvWidget::isSubtitleFile(path))
+        if (url.isLocalFile() && QFileInfo(path).isDir())
+            files.append(MediaFiles::mediaFilesInFolder(path));
+        else if (!url.isLocalFile() || !MpvWidget::isSubtitleFile(path))
             files.append(path);
     }
     return files;
