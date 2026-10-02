@@ -2,8 +2,10 @@
 
 #include <QMainWindow>
 #include <QTimer>
+#include <QUrl>
 
 class ControlBar;
+class EmptyStateWidget;
 class MpvWidget;
 class OsdWidget;
 class PlayerMenu;
@@ -24,7 +26,13 @@ public:
     void openFile(const QString &pathOrUrl);
     // Plays the first file and queues the rest.
     void openFiles(const QStringList &files);
+    // Opens dropped or pasted URLs: folders are expanded, subtitle files are
+    // added to the video, everything else replaces the playlist.
+    void openUrls(const QList<QUrl> &urls);
     void openFileDialog();
+    void openFolderDialog();
+    void openUrlDialog();
+    void openPlaylistDialog();
     void loadSubtitle(const QString &path);
     void toggleFullScreen();
     void setAlwaysOnTop(bool onTop);
@@ -62,6 +70,7 @@ private:
     Qt::Edges edgesAt(const QPoint &pos) const;
 
     MpvWidget *m_mpv = nullptr;
+    EmptyStateWidget *m_emptyState = nullptr;
     OsdWidget *m_osd = nullptr;
     PlayerMenu *m_menu = nullptr;
     TitleBar *m_titleBar = nullptr;

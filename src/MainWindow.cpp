@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 #include "ControlBar.h"
+#include "EmptyStateWidget.h"
+#include "MediaFiles.h"
 #include "MpvWidget.h"
 #include "OsdWidget.h"
 #include "PlayerMenu.h"
@@ -9,13 +11,16 @@
 #include "ThumbnailPopup.h"
 #include "TitleBar.h"
 
+#include <QAbstractItemView>
 #include <QApplication>
+#include <QClipboard>
 #include <QContextMenuEvent>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeyEvent>
 #include <QMimeData>
 #include <QMouseEvent>
@@ -40,6 +45,25 @@ constexpr int kIdleHideMs = 2000;
 // Distance between the seekbar and the thumbnail popup above it.
 constexpr int kPopupGap = 6;
 
+// Keys that a focused list keeps for its own navigation instead of letting the
+// player's shortcuts (volume, fullscreen) take them.
+bool isListNavigationKey(const QKeyEvent *event)
+{
+    if (event->modifiers() & ~(Qt::ShiftModifier | Qt::KeypadModifier))
+        return false;
+    switch (event->key()) {
+    case Qt::Key_Up:
+    case Qt::Key_Down:
+    case Qt::Key_Home:
+    case Qt::Key_End:
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+        return true;
+    default:
+        return false;
+    }
+}
+
 QString formatDelay(double seconds)
 {
     const long long ms = std::llround(seconds * 1000);
@@ -55,6 +79,9 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowFlag(Qt::FramelessWindowHint);
     setAcceptDrops(true);
     setMinimumSize(420, 260);
+    // Clicking the video takes keyboard focus back from the playlist, so the
+    // arrow keys control the player again.
+    m_mpv->setFocusPolicy(Qt::ClickFocus);
 
     m_root = new QWidget(this);
     m_root->setObjectName(QStringLiteral("RootWidget"));
@@ -76,6 +103,8 @@ MainWindow::MainWindow(QWidget *parent)
     layout->addWidget(m_controlBar);
     setCentralWidget(m_root);
 
+    // Created before the OSD so that OSD messages draw on top of it.
+    m_emptyState = new EmptyStateWidget(m_mpv);
     m_osd = new OsdWidget(m_mpv);
     m_menu = new PlayerMenu(m_mpv, this);
     m_titleBar->setTitle(QApplication::applicationDisplayName());
@@ -99,6 +128,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_menu, &PlayerMenu::osdRequested, m_osd,
             [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
     connect(m_controlBar, &ControlBar::openRequested, this, &MainWindow::openFileDialog);
+    connect(m_emptyState, &EmptyStateWidget::openFileRequested, this, &MainWindow::openFileDialog);
+    connect(m_emptyState, &EmptyStateWidget::openFolderRequested, this, &MainWindow::openFolderDialog);
+    connect(m_emptyState, &EmptyStateWidget::openUrlRequested, this, &MainWindow::openUrlDialog);
+    connect(m_emptyState, &EmptyStateWidget::openPlaylistRequested, this, &MainWindow::openPlaylistDialog);
+    connect(m_emptyState, &EmptyStateWidget::urlsDropped, this, &MainWindow::openUrls);
+    connect(m_mpv, &MpvWidget::fileStarted, m_emptyState, [this] { m_emptyState->setActive(false); });
     connect(m_controlBar, &ControlBar::fullScreenRequested, this, &MainWindow::toggleFullScreen);
     connect(m_controlBar, &ControlBar::playlistToggled, this, &MainWindow::setPlaylistVisible);
 
@@ -144,6 +179,11 @@ void MainWindow::setupPlaylist()
     connect(m_drawer, &PlaylistDrawer::clearRequested, this,
             [this] { m_mpv->command({QStringLiteral("playlist-clear")}); });
     connect(m_drawer, &PlaylistDrawer::expandedChanged, m_controlBar, &ControlBar::setPlaylistChecked);
+    connect(m_drawer, &PlaylistDrawer::expandedChanged, this, [this](bool expanded) {
+        // Don't leave the keyboard on a list that is going away.
+        if (!expanded && m_drawer->isAncestorOf(QApplication::focusWidget()))
+            m_mpv->setFocus();
+    });
 }
 
 void MainWindow::setupThumbnails()
@@ -177,7 +217,12 @@ void MainWindow::setupThumbnails()
 
 void MainWindow::onStateUpdated(const QString &name, const QVariant &value)
 {
-    if (name == QLatin1String("playlist")) {
+    if (name == QLatin1String("idle-active")) {
+        // Nothing loaded (startup, stop, or the playlist ran out or was cleared).
+        // The report can arrive after the next file already started, so check again.
+        if (value.toBool() && m_mpv->isIdle())
+            m_emptyState->setActive(true);
+    } else if (name == QLatin1String("playlist")) {
         m_drawer->setEntries(value.toList());
     } else if (name == QLatin1String("path")) {
         // Previews come from a second decoder, so only local files are worth it.
@@ -198,9 +243,86 @@ void MainWindow::openFiles(const QStringList &files)
 
 void MainWindow::openFileDialog()
 {
-    const QStringList files = QFileDialog::getOpenFileNames(this, tr("Open Files"));
+    const QStringList files = QFileDialog::getOpenFileNames(this, tr("Open Files"), {}, MediaFiles::mediaFileFilter());
     if (!files.isEmpty())
         openFiles(files);
+}
+
+void MainWindow::openFolderDialog()
+{
+    const QString folder = QFileDialog::getExistingDirectory(this, tr("Open Folder"));
+    if (folder.isEmpty())
+        return;
+    const QStringList files = MediaFiles::mediaFilesInFolder(folder);
+    if (files.isEmpty())
+        m_osd->showValue(tr("No media files in"), QFileInfo(folder).fileName());
+    else
+        openFiles(files);
+}
+
+void MainWindow::openUrlDialog()
+{
+    QInputDialog dialog(this);
+    dialog.setWindowTitle(tr("Open URL / Stream"));
+    dialog.setLabelText(tr("Video or audio URL (http, https, rtsp, rtmp, ...):"));
+    dialog.setOkButtonText(tr("Open"));
+    dialog.resize(520, dialog.sizeHint().height());
+    // Offer a URL that is already on the clipboard.
+    const QString clipboard = QGuiApplication::clipboard()->text().trimmed();
+    if (clipboard.contains(QLatin1String("://")) && !clipboard.contains(QLatin1Char('\n')))
+        dialog.setTextValue(clipboard);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const QString text = dialog.textValue().trimmed();
+    if (text.isEmpty())
+        return;
+    // Accept "example.com/video.mp4" as well as full URLs, which mpv takes as typed.
+    const bool hasScheme = text.contains(QLatin1String("://"));
+    const QUrl url = hasScheme ? QUrl(text) : QUrl::fromUserInput(text);
+    if (!url.isValid() || url.scheme().isEmpty()) {
+        m_osd->showValue(tr("Invalid URL"), text);
+        return;
+    }
+    if (url.isLocalFile())
+        openFile(url.toLocalFile());
+    else
+        openFile(hasScheme ? text : url.toString());
+}
+
+void MainWindow::openPlaylistDialog()
+{
+    const QString file = QFileDialog::getOpenFileName(this, tr("Open Playlist"), {}, MediaFiles::playlistFileFilter());
+    if (!file.isEmpty())
+        m_mpv->loadPlaylist(file);
+}
+
+void MainWindow::openUrls(const QList<QUrl> &urls)
+{
+    // Subtitle files are added to the playing video, or to a video dropped with them.
+    QStringList media;
+    QStringList subtitles;
+    for (const QUrl &url : urls) {
+        if (!url.isLocalFile()) {
+            media.append(url.toString());
+            continue;
+        }
+        const QString path = url.toLocalFile();
+        if (QFileInfo(path).isDir())
+            media.append(MediaFiles::mediaFilesInFolder(path));
+        else if (MpvWidget::isSubtitleFile(path))
+            subtitles.append(path);
+        else
+            media.append(path);
+    }
+    if (!media.isEmpty()) {
+        m_mpv->loadFiles(media, subtitles);
+    } else if (!subtitles.isEmpty()) {
+        for (const QString &subtitle : std::as_const(subtitles))
+            loadSubtitle(subtitle);
+    } else {
+        m_osd->showValue(tr("No media files found"));
+    }
 }
 
 bool MainWindow::isPlaylistVisible() const
@@ -337,6 +459,15 @@ void MainWindow::updateChrome()
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    // A shortcut fires unless the focused widget claims the key first. Let a
+    // focused list (the playlist) keep its navigation keys, so Up/Down move the
+    // selection instead of changing the volume.
+    if (event->type() == QEvent::ShortcutOverride && qobject_cast<QAbstractItemView *>(watched)
+        && static_cast<QWidget *>(watched)->window() == this
+        && isListNavigationKey(static_cast<QKeyEvent *>(event))) {
+        event->accept();
+        return true;
+    }
     if (event->type() == QEvent::MouseMove && watched->isWidgetType()
         && static_cast<QWidget *>(watched)->window() == this) {
         onMouseActivity(static_cast<QMouseEvent *>(event)->globalPosition().toPoint());
@@ -360,6 +491,24 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     // Everything else is a QAction shortcut registered by PlayerMenu.
     switch (event->key()) {
+    case Qt::Key_MediaPlay:
+        m_mpv->play();
+        break;
+    case Qt::Key_MediaPause:
+        m_mpv->pause();
+        break;
+    case Qt::Key_MediaTogglePlayPause:
+        m_mpv->togglePause();
+        break;
+    case Qt::Key_MediaStop:
+        m_mpv->stop();
+        break;
+    case Qt::Key_MediaNext:
+        m_mpv->playlistNext();
+        break;
+    case Qt::Key_MediaPrevious:
+        m_mpv->playlistPrev();
+        break;
     case Qt::Key_Enter:
         toggleFullScreen();
         break;
@@ -376,6 +525,11 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 
 void MainWindow::wheelEvent(QWheelEvent *event)
 {
+    // The playlist scrolls itself; at its ends the leftover wheel events land here.
+    if (m_drawer->isVisible() && m_drawer->rect().contains(m_drawer->mapFromGlobal(event->globalPosition().toPoint()))) {
+        event->ignore();
+        return;
+    }
     // One standard wheel notch is 120 units; scale to support high-resolution wheels.
     const int delta = event->angleDelta().y();
     if (delta != 0)
@@ -428,22 +582,7 @@ void MainWindow::dropEvent(QDropEvent *event)
     const QList<QUrl> urls = event->mimeData()->urls();
     if (urls.isEmpty())
         return;
-    // Subtitle files are added to the playing video, or to a video dropped with them.
-    QString media;
-    QStringList subtitles;
-    for (const QUrl &url : urls) {
-        const QString path = url.isLocalFile() ? url.toLocalFile() : url.toString();
-        if (url.isLocalFile() && MpvWidget::isSubtitleFile(path))
-            subtitles.append(path);
-        else if (media.isEmpty())
-            media = path;
-    }
-    if (!media.isEmpty()) {
-        m_mpv->loadFile(media, subtitles);
-    } else {
-        for (const QString &subtitle : std::as_const(subtitles))
-            loadSubtitle(subtitle);
-    }
+    openUrls(urls);
     event->acceptProposedAction();
 }
 

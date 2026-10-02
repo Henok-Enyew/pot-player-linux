@@ -22,11 +22,25 @@ public:
     void loadFile(const QString &pathOrUrl, const QStringList &subtitles = {});
     // Replaces the playlist: plays the first file and queues the rest.
     void loadFiles(const QStringList &files, const QStringList &subtitles = {});
+    // Replaces the playlist with the entries of a playlist file (.m3u, .pls, ...).
+    void loadPlaylist(const QString &path);
     // Queues files at playlist index `row` (-1 appends). Starts playback if idle.
     void insertFiles(const QStringList &files, int row = -1);
     // Adds an external subtitle file to the current file and selects it.
     void addSubtitle(const QString &path);
     void adjustVolume(double delta);
+
+    // Transport controls. Unlike the raw mpv commands these also work after
+    // stop(): the playlist is kept, and playing resumes from the last entry.
+    void play();
+    void pause();
+    void togglePause();
+    // Stops playback and blanks the video surface, keeping the playlist.
+    void stop();
+    void playlistNext();
+    void playlistPrev();
+    // True while nothing is loaded (startup, after stop() or an empty playlist).
+    bool isIdle() const;
 
     // Runs an mpv command asynchronously, e.g. {"seek", "5", "relative"}.
     void command(const QStringList &args);
@@ -55,6 +69,8 @@ Q_SIGNALS:
     // one; the value is invalid while the property is unavailable. Use this for
     // widgets that mirror player state.
     void propertyUpdated(const QString &name, const QVariant &value);
+    // Emitted as mpv starts opening a playlist entry.
+    void fileStarted();
     // Emitted once playback resumes after a user seek.
     void seeked();
     // Emitted once per file, when the video's display size is first known.
@@ -71,6 +87,8 @@ private Q_SLOTS:
 private:
     static void onMpvWakeup(void *ctx);
     static void onMpvRenderUpdate(void *ctx);
+    // Plays playlist entry `index`, clamped to the playlist. Returns false if it is empty.
+    bool playIndex(int index);
 
     mpv_handle *m_mpv = nullptr;
     mpv_render_context *m_renderCtx = nullptr;
@@ -84,4 +102,8 @@ private:
     bool m_fileLoaded = false;
     bool m_seeking = false;
     bool m_awaitingVideoSize = false;
+    // Mirrors idle-active for painting, which must not block on mpv.
+    bool m_idle = true;
+    // Playlist entry that played last; mpv forgets it on stop.
+    int m_lastPlaylistPos = -1;
 };

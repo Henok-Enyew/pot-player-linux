@@ -7,10 +7,12 @@
 #include <QMetaObject>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
+#include <QPalette>
 
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 
+#include <algorithm>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -55,7 +57,7 @@ QVariant nodeToVariant(const mpv_node *node)
 
 // Player state mirrored by widgets through propertyUpdated() only.
 constexpr const char *kStateProperties[] = {
-    "time-pos", "duration", "playlist", "chapter-list", "path",
+    "time-pos", "duration", "playlist", "chapter-list", "path", "idle-active", "playlist-pos",
 };
 
 // Properties whose changes are also forwarded through propertyChanged().
@@ -137,6 +139,17 @@ void MpvWidget::loadFiles(const QStringList &files, const QStringList &subtitles
         command(cmd);
 }
 
+void MpvWidget::loadPlaylist(const QString &path)
+{
+    m_pendingSubtitles.clear();
+    const QStringList cmd{QStringLiteral("loadlist"), path, QStringLiteral("replace")};
+    if (!m_renderCtx) {
+        m_pendingLoads = {cmd};
+        return;
+    }
+    command(cmd);
+}
+
 void MpvWidget::insertFiles(const QStringList &files, int row)
 {
     if (!m_renderCtx) {
@@ -163,6 +176,76 @@ void MpvWidget::addSubtitle(const QString &path)
 void MpvWidget::adjustVolume(double delta)
 {
     command({QStringLiteral("add"), QStringLiteral("volume"), QString::number(delta)});
+}
+
+bool MpvWidget::isIdle() const
+{
+    // Asked live: the observed value can lag behind a just-started file.
+    return mpvProperty(QStringLiteral("idle-active")).toBool();
+}
+
+void MpvWidget::play()
+{
+    if (isIdle()) {
+        // The pause flag outlives stop; clear it so the entry doesn't start paused.
+        setMpvProperty(QStringLiteral("pause"), QStringLiteral("no"));
+        playIndex(std::max(m_lastPlaylistPos, 0));
+        return;
+    }
+    // With keep-open, mpv pauses on the last frame; playing again starts over.
+    if (mpvProperty(QStringLiteral("eof-reached")).toBool())
+        command({QStringLiteral("seek"), QStringLiteral("0"), QStringLiteral("absolute")});
+    setMpvProperty(QStringLiteral("pause"), QStringLiteral("no"));
+}
+
+void MpvWidget::pause()
+{
+    // Pausing while idle would make the next file start paused.
+    if (!isIdle())
+        setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
+}
+
+void MpvWidget::togglePause()
+{
+    if (isIdle() || mpvProperty(QStringLiteral("pause")).toBool())
+        play();
+    else
+        pause();
+}
+
+void MpvWidget::stop()
+{
+    // The playlist-pos notification may still be queued; remember the live entry.
+    const int pos = mpvProperty(QStringLiteral("playlist-pos")).toInt();
+    if (pos >= 0)
+        m_lastPlaylistPos = pos;
+    command({QStringLiteral("stop"), QStringLiteral("keep-playlist")});
+}
+
+void MpvWidget::playlistNext()
+{
+    // mpv has no current entry to step from once stopped.
+    if (isIdle())
+        playIndex(m_lastPlaylistPos + 1);
+    else
+        command({QStringLiteral("playlist-next")});
+}
+
+void MpvWidget::playlistPrev()
+{
+    if (isIdle())
+        playIndex(std::max(m_lastPlaylistPos - 1, 0));
+    else
+        command({QStringLiteral("playlist-prev")});
+}
+
+bool MpvWidget::playIndex(int index)
+{
+    const int count = mpvProperty(QStringLiteral("playlist-count")).toInt();
+    if (count <= 0)
+        return false;
+    command({QStringLiteral("playlist-play-index"), QString::number(std::clamp(index, 0, count - 1))});
+    return true;
 }
 
 void MpvWidget::command(const QStringList &args)
@@ -272,6 +355,15 @@ void MpvWidget::paintGL()
     if (!m_renderCtx)
         return;
 
+    QOpenGLFunctions *gl = context()->functions();
+    if (m_idle) {
+        // Nothing is loaded: show the skin's background instead of the last frame.
+        const QColor background = palette().color(QPalette::Window);
+        gl->glClearColor(background.redF(), background.greenF(), background.blueF(), 1);
+        gl->glClear(GL_COLOR_BUFFER_BIT);
+        return;
+    }
+
     const qreal dpr = devicePixelRatioF();
     mpv_opengl_fbo fbo{
         static_cast<int>(defaultFramebufferObject()),
@@ -291,7 +383,6 @@ void MpvWidget::paintGL()
     // blends this widget's texture when composing the window (e.g. with
     // overlays on top), which would then drop the video and keep only
     // subtitles, so force the alpha channel to opaque.
-    QOpenGLFunctions *gl = context()->functions();
     gl->glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
     gl->glClearColor(0, 0, 0, 1);
     gl->glClear(GL_COLOR_BUFFER_BIT);
@@ -318,6 +409,12 @@ void MpvWidget::processMpvEvents()
                 const QVariant value = prop->format == MPV_FORMAT_NODE
                     ? nodeToVariant(static_cast<mpv_node *>(prop->data))
                     : QVariant();
+                if (name == QLatin1String("idle-active")) {
+                    m_idle = value.toBool();
+                    update();
+                } else if (name == QLatin1String("playlist-pos") && value.toInt() >= 0) {
+                    m_lastPlaylistPos = value.toInt();
+                }
                 Q_EMIT propertyUpdated(name, value);
                 if (!m_stateProperties.contains(name)) {
                     // mpv reports every observed property once on startup; that is not a change.
@@ -333,6 +430,7 @@ void MpvWidget::processMpvEvents()
             m_fileLoaded = false;
             m_seeking = false;
             m_awaitingVideoSize = true;
+            Q_EMIT fileStarted();
             break;
         case MPV_EVENT_FILE_LOADED:
             m_fileLoaded = true;

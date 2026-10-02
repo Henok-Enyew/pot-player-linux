@@ -36,8 +36,25 @@ cmake --build build
 `cmake --install build` installs the binary together with the desktop entry,
 icon and AppStream metadata (app ID `org.github.potlinux`).
 
-Files can also be opened by dragging them onto the window (the first plays,
-the rest are queued) or onto the playlist drawer (queued where dropped).
+Without arguments the player opens on a start screen with **Open File**,
+**Open Folder** (queues the media files in a folder and its subfolders, in
+natural order), **Open URL / Stream** and **Open Playlist** (`.m3u`, `.m3u8`,
+`.pls`); the same actions are in the right-click menu. Files and folders can
+also be dragged onto the window (the first plays, the rest are queued) or
+onto the playlist drawer (queued where dropped).
+
+### Tests
+
+The integration tests drive the real window through its buttons, hotkeys,
+dialogs and drop zone. They need Qt Test (part of `qt6-base-dev` /
+`qt6-qtbase-devel`), `ffmpeg` to generate a test clip, and a display, e.g.
+Xvfb:
+
+```sh
+cmake -S . -B build -G Ninja -DPOTPLAYER_BUILD_TESTS=ON
+cmake --build build
+xvfb-run -a ctest --test-dir build --output-on-failure
+```
 
 ## Skin
 
@@ -45,6 +62,10 @@ The interface uses a PotPlayer-style flat dark skin defined in
 [`resources/skin/potplayer-dark.qss`](resources/skin/potplayer-dark.qss), applied
 on top of Qt's Fusion style with a matching dark palette:
 
+- **Start screen** shown while nothing is loaded (on startup, after Stop,
+  or once the playlist is emptied): logo, open actions and a drop zone. It
+  fades out as playback starts and adapts to small windows by dropping the
+  logo and labels, down to icon-only buttons.
 - **Title bar** with the media title and minimize / maximize / close buttons.
   Drag it to move the window; double-click to maximize.
 - **Control bar** with open, previous, play/pause, stop and next buttons, the
@@ -91,10 +112,12 @@ When a file opens, the window resizes to 100% of the video resolution
 
 | Input | Action |
 | --- | --- |
-| `Space` | Play / pause |
+| `Space` | Play / pause (after Stop, plays the playlist again) |
 | `Left` / `Right` | Seek -5 s / +5 s |
 | `Ctrl+Left` / `Ctrl+Right` | Seek -30 s / +30 s |
-| Mouse wheel, `Up` / `Down` | Volume +/- 5 |
+| `Shift+Left` / `Shift+Right` | Seek -60 s / +60 s |
+| `Up` / `Down` | Volume +/- 2 |
+| Mouse wheel | Volume +/- 5 |
 | `M` | Mute |
 | `C` / `X` / `Z` | Speed +0.1 / -0.1 / reset |
 | `Ctrl+L` | Loop file |
@@ -109,6 +132,7 @@ When a file opens, the window resizes to 100% of the video resolution
 | `Ctrl+E` | Screenshot (saved to `~/Pictures`) |
 | `Ctrl+O` | Open files |
 | `PgUp` / `PgDn` | Previous / next file in the playlist |
+| Media keys | Play, pause, play/pause, stop, previous, next |
 | `F6` | Show / hide the playlist |
 | `Ctrl+T` | Always on top |
 | `Alt+1`..`Alt+4` | Window size 50% / 100% / 150% / 200% |
@@ -118,6 +142,13 @@ When a file opens, the window resizes to 100% of the video resolution
 | Right-click | Context menu |
 | Drag inside window | Move window |
 | Drag window edge | Resize window |
+
+While the playlist has keyboard focus, `Up` / `Down`, `Home` / `End` and
+`Enter` move through and play its entries instead of changing the volume or
+fullscreen; click the video to give the keys back to the player.
+
+Stop keeps the playlist, so Play, Previous and Next continue from the entry
+that was playing.
 
 ## Packaging and releases
 
