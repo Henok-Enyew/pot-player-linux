@@ -68,4 +68,5 @@ private:
     QList<Toggle> m_toggles;
     QAction *m_fullScreenAction = nullptr;
     QAction *m_onTopAction = nullptr;
+    QAction *m_playlistAction = nullptr;
 };

@@ -1,10 +1,12 @@
 #include "MpvWidget.h"
+#include "MpvHelpers.h"
 
 #include <QByteArray>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QMetaObject>
 #include <QOpenGLContext>
+#include <QOpenGLFunctions>
 
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
@@ -51,7 +53,12 @@ QVariant nodeToVariant(const mpv_node *node)
     }
 }
 
-// Properties whose changes are forwarded through propertyChanged().
+// Player state mirrored by widgets through propertyUpdated() only.
+constexpr const char *kStateProperties[] = {
+    "time-pos", "duration", "playlist", "chapter-list", "path",
+};
+
+// Properties whose changes are also forwarded through propertyChanged().
 constexpr const char *kObservedProperties[] = {
     "volume", "mute", "speed", "pause", "audio-delay", "sub-delay", "sub-scale", "sub-pos",
 };
@@ -91,6 +98,10 @@ MpvWidget::MpvWidget(QWidget *parent)
     mpv_observe_property(m_mpv, 0, "media-title", MPV_FORMAT_STRING);
     for (const char *name : kObservedProperties)
         mpv_observe_property(m_mpv, 0, name, MPV_FORMAT_NODE);
+    for (const char *name : kStateProperties)
+        mpv_observe_property(m_mpv, 0, name, MPV_FORMAT_NODE);
+    for (const char *name : kStateProperties)
+        m_stateProperties.insert(QString::fromLatin1(name));
     mpv_set_wakeup_callback(m_mpv, &MpvWidget::onMpvWakeup, this);
 }
 
@@ -106,12 +117,42 @@ MpvWidget::~MpvWidget()
 
 void MpvWidget::loadFile(const QString &pathOrUrl, const QStringList &subtitles)
 {
+    loadFiles({pathOrUrl}, subtitles);
+}
+
+void MpvWidget::loadFiles(const QStringList &files, const QStringList &subtitles)
+{
+    if (files.isEmpty())
+        return;
     m_pendingSubtitles = subtitles;
+    QList<QStringList> commands{{QStringLiteral("loadfile"), files.first(), QStringLiteral("replace")}};
+    for (qsizetype i = 1; i < files.size(); ++i)
+        commands.append({QStringLiteral("loadfile"), files[i], QStringLiteral("append")});
+
     if (!m_renderCtx) {
-        m_pendingFile = pathOrUrl;
+        m_pendingLoads = commands;
         return;
     }
-    command({QStringLiteral("loadfile"), pathOrUrl});
+    for (const QStringList &cmd : std::as_const(commands))
+        command(cmd);
+}
+
+void MpvWidget::insertFiles(const QStringList &files, int row)
+{
+    if (!m_renderCtx) {
+        for (const QString &file : files)
+            m_pendingLoads.append({QStringLiteral("loadfile"), file, QStringLiteral("append-play")});
+        return;
+    }
+    // Commands run in order, so each appended entry is at count + i when it is moved.
+    const int count = mpvProperty(QStringLiteral("playlist-count")).toInt();
+    for (qsizetype i = 0; i < files.size(); ++i) {
+        command({QStringLiteral("loadfile"), files[i], QStringLiteral("append-play")});
+        if (row >= 0 && row < count) {
+            command({QStringLiteral("playlist-move"), QString::number(count + i),
+                     QString::number(row + i)});
+        }
+    }
 }
 
 void MpvWidget::addSubtitle(const QString &path)
@@ -126,16 +167,7 @@ void MpvWidget::adjustVolume(double delta)
 
 void MpvWidget::command(const QStringList &args)
 {
-    std::vector<QByteArray> storage;
-    storage.reserve(args.size());
-    std::vector<const char *> argv;
-    argv.reserve(args.size() + 1);
-    for (const QString &arg : args) {
-        storage.push_back(arg.toUtf8());
-        argv.push_back(storage.back().constData());
-    }
-    argv.push_back(nullptr);
-    mpv_command_async(m_mpv, 0, argv.data());
+    mpvCommandAsync(m_mpv, args);
 }
 
 QVariant MpvWidget::mpvProperty(const QString &name) const
@@ -231,8 +263,8 @@ void MpvWidget::initializeGL()
 
     mpv_render_context_set_update_callback(m_renderCtx, &MpvWidget::onMpvRenderUpdate, this);
 
-    if (!m_pendingFile.isEmpty())
-        loadFile(std::exchange(m_pendingFile, {}), m_pendingSubtitles);
+    for (const QStringList &cmd : std::exchange(m_pendingLoads, {}))
+        command(cmd);
 }
 
 void MpvWidget::paintGL()
@@ -254,6 +286,16 @@ void MpvWidget::paintGL()
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
     mpv_render_context_render(m_renderCtx, params);
+
+    // mpv may leave the framebuffer's alpha channel at 0 under the video. Qt
+    // blends this widget's texture when composing the window (e.g. with
+    // overlays on top), which would then drop the video and keep only
+    // subtitles, so force the alpha channel to opaque.
+    QOpenGLFunctions *gl = context()->functions();
+    gl->glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    gl->glClearColor(0, 0, 0, 1);
+    gl->glClear(GL_COLOR_BUFFER_BIT);
+    gl->glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 }
 
 void MpvWidget::processMpvEvents()
@@ -272,11 +314,18 @@ void MpvWidget::processMpvEvents()
                 if (prop->format == MPV_FORMAT_STRING && prop->data)
                     title = QString::fromUtf8(*static_cast<char **>(prop->data));
                 Q_EMIT titleChanged(title);
-            } else if (!m_initializedProperties.contains(name)) {
-                // mpv reports every observed property once on startup; that is not a change.
-                m_initializedProperties.insert(name);
-            } else if (prop->format == MPV_FORMAT_NODE) {
-                Q_EMIT propertyChanged(name, nodeToVariant(static_cast<mpv_node *>(prop->data)));
+            } else {
+                const QVariant value = prop->format == MPV_FORMAT_NODE
+                    ? nodeToVariant(static_cast<mpv_node *>(prop->data))
+                    : QVariant();
+                Q_EMIT propertyUpdated(name, value);
+                if (!m_stateProperties.contains(name)) {
+                    // mpv reports every observed property once on startup; that is not a change.
+                    if (!m_initializedProperties.contains(name))
+                        m_initializedProperties.insert(name);
+                    else if (value.isValid())
+                        Q_EMIT propertyChanged(name, value);
+                }
             }
             break;
         }

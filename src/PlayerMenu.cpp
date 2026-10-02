@@ -165,6 +165,8 @@ void PlayerMenu::buildPlaybackMenu()
     // Pause is observed by MainWindow, which shows its own OSD message.
     addToggle(playback, tr("Pause"), QStringLiteral("pause"), QKeySequence(Qt::Key_Space), false);
     addCommand(playback, tr("Stop"), {QStringLiteral("stop")});
+    addCommand(playback, tr("Previous File"), {QStringLiteral("playlist-prev")}, QKeySequence(Qt::Key_PageUp));
+    addCommand(playback, tr("Next File"), {QStringLiteral("playlist-next")}, QKeySequence(Qt::Key_PageDown));
     playback->addSeparator();
     addCommand(playback, tr("Seek Forward 5s"), {QStringLiteral("seek"), QStringLiteral("5"), QStringLiteral("relative")},
                QKeySequence(Qt::Key_Right));
@@ -207,6 +209,10 @@ void PlayerMenu::buildWindowMenu()
         Q_EMIT osdRequested(tr("Always on Top"), m_onTopAction->isChecked() ? tr("On") : tr("Off"));
     }, QKeySequence(Qt::CTRL | Qt::Key_T));
     m_onTopAction->setCheckable(true);
+    m_playlistAction = addItem(window, tr("Playlist"), [this] {
+        m_window->setPlaylistVisible(!m_window->isPlaylistVisible());
+    }, QKeySequence(Qt::Key_F6));
+    m_playlistAction->setCheckable(true);
 
     QMenu *size = window->addMenu(tr("Window Size"));
     const QList<QPair<QString, qreal>> scales{
@@ -365,4 +371,5 @@ void PlayerMenu::syncState()
         toggle.action->setChecked(m_mpv->mpvPropertyString(toggle.property) != toggle.offValue);
     m_fullScreenAction->setChecked(m_window->isFullScreen());
     m_onTopAction->setChecked(m_window->windowFlags().testFlag(Qt::WindowStaysOnTopHint));
+    m_playlistAction->setChecked(m_window->isPlaylistVisible());
 }

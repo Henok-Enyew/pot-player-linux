@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
@@ -21,15 +22,34 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
 
 add_executable(pot-player
+    resources/skin.qrc
     src/main.cpp
+    src/ControlBar.cpp
+    src/ControlBar.h
+    src/Icons.cpp
+    src/Icons.h
     src/MainWindow.cpp
     src/MainWindow.h
+    src/MpvHelpers.h
     src/MpvWidget.cpp
     src/MpvWidget.h
     src/OsdWidget.cpp
     src/OsdWidget.h
     src/PlayerMenu.cpp
     src/PlayerMenu.h
+    src/PlaylistDrawer.cpp
+    src/PlaylistDrawer.h
+    src/SeekBar.cpp
+    src/SeekBar.h
+    src/Theme.cpp
+    src/Theme.h
+    src/ThumbnailGenerator.cpp
+    src/ThumbnailGenerator.h
+    src/ThumbnailPopup.cpp
+    src/ThumbnailPopup.h
+    src/TimeFormat.h
+    src/TitleBar.cpp
+    src/TitleBar.h
 )
 
 target_compile_definitions(pot-player PRIVATE

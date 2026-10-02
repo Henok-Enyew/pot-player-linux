@@ -1,4 +1,5 @@
 #include "OsdWidget.h"
+#include "TimeFormat.h"
 
 #include <QEvent>
 #include <QPainter>
@@ -16,15 +17,6 @@ const QColor kOutlineColor(0, 0, 0, 200);
 
 constexpr int kHoldMs = 1200;
 constexpr int kFadeMs = 350;
-
-QString formatTime(double seconds)
-{
-    const qint64 total = std::max<qint64>(0, static_cast<qint64>(std::floor(seconds)));
-    return QStringLiteral("%1:%2:%3")
-        .arg(total / 3600, 2, 10, QLatin1Char('0'))
-        .arg((total / 60) % 60, 2, 10, QLatin1Char('0'))
-        .arg(total % 60, 2, 10, QLatin1Char('0'));
-}
 
 } // namespace
 

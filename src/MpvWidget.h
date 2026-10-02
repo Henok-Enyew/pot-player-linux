@@ -20,6 +20,10 @@ public:
 
     // `subtitles` are added once the file has loaded.
     void loadFile(const QString &pathOrUrl, const QStringList &subtitles = {});
+    // Replaces the playlist: plays the first file and queues the rest.
+    void loadFiles(const QStringList &files, const QStringList &subtitles = {});
+    // Queues files at playlist index `row` (-1 appends). Starts playback if idle.
+    void insertFiles(const QStringList &files, int row = -1);
     // Adds an external subtitle file to the current file and selects it.
     void addSubtitle(const QString &path);
     void adjustVolume(double delta);
@@ -45,7 +49,12 @@ public:
 Q_SIGNALS:
     void titleChanged(const QString &title);
     // Emitted when an observed property changes after its initial value is known.
+    // Use this for notifications such as the OSD.
     void propertyChanged(const QString &name, const QVariant &value);
+    // Emitted for every report of an observed property, including the initial
+    // one; the value is invalid while the property is unavailable. Use this for
+    // widgets that mirror player state.
+    void propertyUpdated(const QString &name, const QVariant &value);
     // Emitted once playback resumes after a user seek.
     void seeked();
     // Emitted once per file, when the video's display size is first known.
@@ -67,9 +76,11 @@ private:
     mpv_render_context *m_renderCtx = nullptr;
     // Files requested before the GL context existed; loading them earlier
     // would make mpv's video output fail to initialize.
-    QString m_pendingFile;
+    // Commands that start playback, deferred until the render context exists.
+    QList<QStringList> m_pendingLoads;
     QStringList m_pendingSubtitles;
     QSet<QString> m_initializedProperties;
+    QSet<QString> m_stateProperties;
     bool m_fileLoaded = false;
     bool m_seeking = false;
     bool m_awaitingVideoSize = false;

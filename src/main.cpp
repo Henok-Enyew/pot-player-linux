@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Theme.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -15,12 +16,14 @@ int main(int argc, char *argv[])
 
     // libmpv requires the C numeric locale; QApplication may have changed it.
     std::setlocale(LC_NUMERIC, "C");
+    applyDarkSkin(app);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("A lightweight media player for Linux"));
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument(QStringLiteral("file"), QStringLiteral("Media file or URL to play."));
+    parser.addPositionalArgument(QStringLiteral("files"), QStringLiteral("Media files or URLs to play; extra files are queued."),
+                                 QStringLiteral("[files...]"));
     parser.process(app);
 
     MainWindow window;
@@ -29,7 +32,7 @@ int main(int argc, char *argv[])
 
     const QStringList args = parser.positionalArguments();
     if (!args.isEmpty())
-        window.openFile(args.first());
+        window.openFiles(args);
 
     return app.exec();
 }
