@@ -9,6 +9,7 @@ class EmptyStateWidget;
 class MpvWidget;
 class OsdWidget;
 class PlayerMenu;
+class PlaylistController;
 class PlaylistDrawer;
 class ThumbnailGenerator;
 class ThumbnailPopup;
@@ -33,6 +34,11 @@ public:
     void openFolderDialog();
     void openUrlDialog();
     void openPlaylistDialog();
+    void savePlaylistDialog();
+    // Starts saving the queue for the next run and, if `restore`, reopens the
+    // last one (as configured). Returns true if a queue was restored.
+    bool startSession(bool restore);
+    PlaylistController *playlist() const { return m_playlist; }
     void loadSubtitle(const QString &path);
     void toggleFullScreen();
     void setAlwaysOnTop(bool onTop);
@@ -45,6 +51,7 @@ public:
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void changeEvent(QEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
@@ -76,6 +83,7 @@ private:
     TitleBar *m_titleBar = nullptr;
     ControlBar *m_controlBar = nullptr;
     PlaylistDrawer *m_drawer = nullptr;
+    PlaylistController *m_playlist = nullptr;
     ThumbnailGenerator *m_thumbnails = nullptr;
     ThumbnailPopup *m_thumbnailPopup = nullptr;
     QWidget *m_root = nullptr;

@@ -116,6 +116,31 @@ void drawIcon(QPainter &p, IconType type)
         p.drawLine(QPointF(4.5, 6.5), QPointF(15.5, 6.5));
         p.drawLine(QPointF(4.5, 13.5), QPointF(15.5, 13.5));
         break;
+    case IconType::Shuffle:
+        // Two crossing paths with arrowheads on the right.
+        p.drawPolyline(QPolygonF({{3, 6}, {7, 6}, {12.5, 14}, {15.5, 14}}));
+        p.drawPolyline(QPolygonF({{3, 14}, {7, 14}, {12.5, 6}, {15.5, 6}}));
+        p.fillPath(polygon({{15, 3.5}, {18.5, 6}, {15, 8.5}}), color);
+        p.fillPath(polygon({{15, 11.5}, {18.5, 14}, {15, 16.5}}), color);
+        break;
+    case IconType::Sort:
+        // Bars getting shorter, beside a downward arrow.
+        p.drawLine(QPointF(3, 5), QPointF(11, 5));
+        p.drawLine(QPointF(3, 10), QPointF(9, 10));
+        p.drawLine(QPointF(3, 15), QPointF(7, 15));
+        p.drawLine(QPointF(14.5, 4), QPointF(14.5, 14));
+        p.fillPath(polygon({{11.5, 12.5}, {14.5, 17}, {17.5, 12.5}}), color);
+        break;
+    case IconType::More:
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+        for (qreal y : {4.5, 10.0, 15.5})
+            p.drawEllipse(QPointF(10, y), 1.6, 1.6);
+        break;
+    case IconType::Search:
+        p.drawEllipse(QPointF(8.5, 8.5), 4.5, 4.5);
+        p.drawLine(QPointF(12, 12), QPointF(16.5, 16.5));
+        break;
     }
 }
 

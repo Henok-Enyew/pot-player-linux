@@ -1,8 +1,11 @@
 #include "MediaFiles.h"
 
+#include <QCollator>
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QObject>
+#include <QUrl>
 
 #include <algorithm>
 
@@ -42,9 +45,9 @@ QString suffix(const QString &path)
     return QFileInfo(path).suffix().toLower();
 }
 
-// Case-insensitive order that compares runs of digits by value. QCollator's
-// numeric mode would do this, but not in the C locale.
-bool naturalLess(const QString &a, const QString &b)
+// Case-insensitive order that compares runs of digits by value, for when
+// QCollator can't (its numeric mode is unavailable in the C locale).
+int fallbackCompare(const QString &a, const QString &b)
 {
     qsizetype i = 0;
     qsizetype j = 0;
@@ -64,37 +67,52 @@ bool naturalLess(const QString &a, const QString &b)
             while (numB.size() > 1 && numB.front() == QLatin1Char('0'))
                 numB = numB.mid(1);
             if (numA.size() != numB.size())
-                return numA.size() < numB.size();
+                return numA.size() < numB.size() ? -1 : 1;
             if (const int cmp = numA.compare(numB); cmp != 0)
-                return cmp < 0;
+                return cmp;
             continue;
         }
         const QChar ca = a[i].toCaseFolded();
         const QChar cb = b[j].toCaseFolded();
         if (ca != cb)
-            return ca < cb;
+            return ca < cb ? -1 : 1;
         ++i;
         ++j;
     }
     if (a.size() - i != b.size() - j)
-        return a.size() - i < b.size() - j;
-    return a < b; // equal ignoring case and zeros: keep a stable, total order
+        return a.size() - i < b.size() - j ? -1 : 1;
+    return a.compare(b); // equal ignoring case and zeros: keep a stable, total order
 }
 
-void collect(const QDir &dir, QStringList &files)
-{
-    auto naturalOrder = [](const QFileInfo &a, const QFileInfo &b) { return naturalLess(a.fileName(), b.fileName()); };
-    QFileInfoList entries = dir.entryInfoList(QDir::Files | QDir::Readable);
-    std::sort(entries.begin(), entries.end(), naturalOrder);
-    for (const QFileInfo &entry : std::as_const(entries)) {
-        if (MediaFiles::isMediaFile(entry.fileName()))
-            files.append(entry.absoluteFilePath());
+// A numeric, case-insensitive collator for the user's locale, if the platform
+// supports numeric collation there.
+struct NaturalCollator {
+    NaturalCollator()
+    {
+        collator.setNumericMode(true);
+        collator.setCaseSensitivity(Qt::CaseInsensitive);
+        collator.setIgnorePunctuation(false);
+        usable = collator.compare(QStringLiteral("Episode 2"), QStringLiteral("Episode 10")) < 0
+            && collator.compare(QStringLiteral("track9"), QStringLiteral("track10")) < 0
+            && collator.compare(QStringLiteral("a"), QStringLiteral("B")) < 0;
     }
-    // Symlinked folders are skipped so that link cycles can't recurse forever.
-    QFileInfoList folders = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable | QDir::NoSymLinks);
-    std::sort(folders.begin(), folders.end(), naturalOrder);
-    for (const QFileInfo &folder : std::as_const(folders))
-        collect(QDir(folder.absoluteFilePath()), files);
+    QCollator collator;
+    bool usable = false;
+};
+
+// Files sort by folder first (comparing path components naturally), with the
+// files of a folder before those of its subfolders.
+bool folderOrderLess(const QStringList &a, const QStringList &b)
+{
+    const qsizetype dirsA = a.size() - 1;
+    const qsizetype dirsB = b.size() - 1;
+    for (qsizetype k = 0; k < std::min(dirsA, dirsB); ++k) {
+        if (const int cmp = MediaFiles::naturalCompare(a[k], b[k]); cmp != 0)
+            return cmp < 0;
+    }
+    if (dirsA != dirsB)
+        return dirsA < dirsB;
+    return MediaFiles::naturalLess(a.last(), b.last());
 }
 
 } // namespace
@@ -123,11 +141,48 @@ QString playlistFileFilter()
     return QObject::tr("Playlists (%1);;All Files (*)").arg(patterns(kPlaylistExtensions));
 }
 
+QString playlistSaveFilter()
+{
+    return QObject::tr("M3U8 Playlist (UTF-8) (*.m3u8);;M3U Playlist (*.m3u)");
+}
+
 QStringList mediaFilesInFolder(const QString &folder)
 {
+    const QDir root(folder);
+    // Symlinked folders are not followed, so that link cycles can't recurse forever.
+    QDirIterator it(folder, QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
+    QList<QStringList> found; // path components relative to `folder`
+    while (it.hasNext()) {
+        const QString path = it.next();
+        if (isMediaFile(path))
+            found.append(root.relativeFilePath(path).split(QLatin1Char('/')));
+    }
+    std::sort(found.begin(), found.end(), folderOrderLess);
+
     QStringList files;
-    collect(QDir(folder), files);
+    files.reserve(found.size());
+    for (const QStringList &parts : std::as_const(found))
+        files.append(QDir::cleanPath(root.absoluteFilePath(parts.join(QLatin1Char('/')))));
     return files;
+}
+
+int naturalCompare(const QString &a, const QString &b)
+{
+    static const NaturalCollator natural;
+    if (natural.usable) {
+        if (const int cmp = natural.collator.compare(a, b); cmp != 0)
+            return cmp;
+    }
+    return fallbackCompare(a, b);
+}
+
+QString localPath(const QString &entry)
+{
+    const QUrl url(entry);
+    // One-letter "schemes" are not URLs; mpv treats anything else with :// as a stream.
+    if (url.scheme().size() > 1 && entry.contains(QLatin1String("://")))
+        return url.isLocalFile() ? url.toLocalFile() : QString();
+    return entry;
 }
 
 } // namespace MediaFiles

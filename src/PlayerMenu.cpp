@@ -162,6 +162,7 @@ void PlayerMenu::buildPlaybackMenu()
     addItem(this, tr("Open Folder..."), [this] { m_window->openFolderDialog(); });
     addItem(this, tr("Open URL / Stream..."), [this] { m_window->openUrlDialog(); });
     addItem(this, tr("Open Playlist..."), [this] { m_window->openPlaylistDialog(); });
+    addItem(this, tr("Save Playlist..."), [this] { m_window->savePlaylistDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_S));
     addSeparator();
 
     QMenu *playback = addMenu(tr("Playback"));

@@ -77,7 +77,25 @@ on top of Qt's Fusion style with a matching dark palette:
 - **Playlist drawer** (`F6` or the playlist button) that slides in from the
   right. It mirrors mpv's playlist: drag entries to reorder them, drop files
   from a file manager to queue them at that position, double-click to play,
-  `Del` to remove.
+  `Del` to remove. Each entry shows its duration, read in the background by
+  a headless libmpv instance. From its toolbar and right-click menu:
+  - **Add Files...** and **Add Folder...** (scans subfolders for video and
+    audio files and queues them in natural order, so "Episode 2" comes
+    before "Episode 10").
+  - **Sort** by name, duration, file path or file size, **Reverse Order**,
+    and **Shuffle**. Entries are moved inside mpv's playlist, so the playing
+    file keeps playing.
+  - **Remove Missing/Inaccessible Files**, **Remove Duplicates** (keeps the
+    playing copy) and **Clear Playlist**.
+  - A **search field** that filters the list as you type, matching every word
+    against names and paths, without changing the playlist.
+  - **Open Playlist...** and **Save Playlist...** (`Ctrl+S`; extended M3U
+    with titles and durations, `.m3u8` or `.m3u`).
+  - **Remember Playlist on Exit** and **Resume Playback Position** (both on
+    by default): the queue is saved to
+    `~/.config/potplayer-linux/last_playlist.json` and restored on the next
+    start without files on the command line, reopening the last entry
+    paused where it was left.
 
 In fullscreen the title bar, drawer and control bar are hidden; moving the
 pointer to the bottom edge reveals the control bar, and the controls and

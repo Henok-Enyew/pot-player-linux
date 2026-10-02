@@ -36,6 +36,8 @@ add_library(pot-player-core OBJECT
     src/MainWindow.h
     src/MediaFiles.cpp
     src/MediaFiles.h
+    src/MediaProber.cpp
+    src/MediaProber.h
     src/MpvHelpers.h
     src/MpvWidget.cpp
     src/MpvWidget.h
@@ -43,8 +45,14 @@ add_library(pot-player-core OBJECT
     src/OsdWidget.h
     src/PlayerMenu.cpp
     src/PlayerMenu.h
+    src/PlaylistController.cpp
+    src/PlaylistController.h
     src/PlaylistDrawer.cpp
     src/PlaylistDrawer.h
+    src/PlaylistOps.cpp
+    src/PlaylistOps.h
+    src/PlaylistSession.cpp
+    src/PlaylistSession.h
     src/SeekBar.cpp
     src/SeekBar.h
     src/Theme.cpp

@@ -24,6 +24,10 @@ public:
     void loadFiles(const QStringList &files, const QStringList &subtitles = {});
     // Replaces the playlist with the entries of a playlist file (.m3u, .pls, ...).
     void loadPlaylist(const QString &path);
+    // Replaces the playlist with `files` without starting playback; Play
+    // starts at entry `current`. With `resumeAt` >= 0, entry `current` is
+    // opened paused at `resumeAt` seconds instead.
+    void restorePlaylist(const QStringList &files, int current, double resumeAt = -1);
     // Queues files at playlist index `row` (-1 appends). Starts playback if idle.
     void insertFiles(const QStringList &files, int row = -1);
     // Adds an external subtitle file to the current file and selects it.
@@ -41,6 +45,8 @@ public:
     void playlistPrev();
     // True while nothing is loaded (startup, after stop() or an empty playlist).
     bool isIdle() const;
+    // The entry that is playing, or played last before a stop; -1 if none.
+    int lastPlaylistPos() const { return m_lastPlaylistPos; }
 
     // Runs an mpv command asynchronously, e.g. {"seek", "5", "relative"}.
     void command(const QStringList &args);
@@ -87,6 +93,8 @@ private Q_SLOTS:
 private:
     static void onMpvWakeup(void *ctx);
     static void onMpvRenderUpdate(void *ctx);
+    // Runs `commands` now, or once the render context exists.
+    void runOrDefer(const QList<QStringList> &commands);
     // Plays playlist entry `index`, clamped to the playlist. Returns false if it is empty.
     bool playIndex(int index);
 
@@ -102,6 +110,8 @@ private:
     bool m_fileLoaded = false;
     bool m_seeking = false;
     bool m_awaitingVideoSize = false;
+    // The "start" option was set for a resumed entry and must not apply to later files.
+    bool m_resetStart = false;
     // Mirrors idle-active for painting, which must not block on mpv.
     bool m_idle = true;
     // Playlist entry that played last; mpv forgets it on stop.
