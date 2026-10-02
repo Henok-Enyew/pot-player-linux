@@ -1,0 +1,155 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Build the packages without publishing, to test packaging changes.
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - 'org.github.potlinux.yaml'
+      - '.github/workflows/release.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  version:
+    name: Determine version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        name: Read version
+        run: |
+          project_version=$(sed -nE 's/^ *VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt | head -1)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            # The tag may carry a suffix (v0.2.0-rc1) but must match the
+            # version compiled into the binary.
+            if [[ "${version%%-*}" != "$project_version" ]]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match project VERSION $project_version in CMakeLists.txt"
+              exit 1
+            fi
+          else
+            version="${project_version}-dev.${GITHUB_SHA::7}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+  appimage:
+    name: AppImage
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            qt6-base-dev qmake6 qt6-wayland libgl-dev libmpv-dev \
+            desktop-file-utils file
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: packaging/appimage/build-appimage.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  rpm:
+    name: Fedora RPM
+    needs: version
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+    steps:
+      - name: Install packaging tools
+        run: dnf install -y git rpm-build rpmdevtools 'dnf-command(builddep)'
+
+      - uses: actions/checkout@v4
+
+      - name: Build RPM
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # RPM versions cannot contain '-'.
+          rpm_version="${VERSION//-/\~}"
+          topdir="$PWD/rpmbuild"
+          mkdir -p "$topdir/SOURCES"
+          sed -i "s/^Version:.*/Version:        ${rpm_version}/" packaging/rpm/pot-player.spec
+          git archive --format=tar.gz --prefix="pot-player-${rpm_version}/" \
+            -o "$topdir/SOURCES/pot-player-${rpm_version}.tar.gz" HEAD
+          dnf builddep -y packaging/rpm/pot-player.spec
+          rpmbuild -ba --define "_topdir $topdir" packaging/rpm/pot-player.spec
+          mkdir -p dist
+          cp "$topdir"/RPMS/*/pot-player-[0-9]*.rpm "$topdir"/SRPMS/*.src.rpm dist/
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  flatpak:
+    name: Flatpak
+    needs: version
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: org.github.potlinux.yaml
+          bundle: Pot_Player-${{ needs.version.outputs.version }}-x86_64.flatpak
+          upload-artifact: false
+          cache-key: flatpak-builder-${{ hashFiles('org.github.potlinux.yaml') }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: Pot_Player-*.flatpak
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, appimage, rpm, flatpak]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Pot Player ${{ needs.version.outputs.version }}
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true

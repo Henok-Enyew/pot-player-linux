@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/skin">
+        <file alias="potplayer-dark.qss">skin/potplayer-dark.qss</file>
+    </qresource>
+</RCC>
