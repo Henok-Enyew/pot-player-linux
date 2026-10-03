@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <utility>
 
 namespace {
 
@@ -177,6 +178,14 @@ bool writeM3u(const QString &path, const QList<Entry> &entries, QString *error)
 
 QStringList readPlaylist(const QString &path)
 {
+    QStringList files;
+    for (const Entry &entry : readPlaylistEntries(path))
+        files.append(entry.filename);
+    return files;
+}
+
+QList<Entry> readPlaylistEntries(const QString &path)
+{
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return {};
@@ -190,29 +199,75 @@ QStringList readPlaylist(const QString &path)
         return QDir::cleanPath(base.absoluteFilePath(entry));
     };
 
-    QStringList entries;
     if (QFileInfo(path).suffix().toLower() == QLatin1String("pls")) {
-        // "FileN=..." lines, in the order of N.
-        QMap<int, QString> files;
+        // "FileN=..." and "TitleN=..." lines, in the order of N.
+        QMap<int, Entry> numbered;
         for (const QString &line : lines) {
             const QString trimmed = line.trimmed();
             const qsizetype equals = trimmed.indexOf(QLatin1Char('='));
-            if (equals < 0 || !trimmed.startsWith(QLatin1String("File"), Qt::CaseInsensitive))
+            if (equals < 0)
+                continue;
+            const QString key = trimmed.left(equals).toLower();
+            const QString value = trimmed.mid(equals + 1).trimmed();
+            const bool isFile = key.startsWith(QLatin1String("file"));
+            if (!isFile && !key.startsWith(QLatin1String("title")))
                 continue;
             bool ok = false;
-            const int number = trimmed.mid(4, equals - 4).toInt(&ok);
-            const QString value = trimmed.mid(equals + 1).trimmed();
-            if (ok && !value.isEmpty())
-                files.insert(number, resolve(value));
+            const int number = key.mid(isFile ? 4 : 5).toInt(&ok);
+            if (!ok || value.isEmpty())
+                continue;
+            if (isFile)
+                numbered[number].filename = resolve(value);
+            else
+                numbered[number].title = value;
         }
-        return files.values();
+        QList<Entry> entries;
+        for (const Entry &entry : std::as_const(numbered)) {
+            if (!entry.filename.isEmpty())
+                entries.append(entry);
+        }
+        return entries;
     }
+
+    QList<Entry> entries;
+    QString title; // from the #EXTINF line before the entry
     for (const QString &line : lines) {
         const QString trimmed = line.trimmed();
-        if (!trimmed.isEmpty() && !trimmed.startsWith(QLatin1Char('#')))
-            entries.append(resolve(trimmed));
+        if (trimmed.isEmpty())
+            continue;
+        if (trimmed.startsWith(QLatin1Char('#'))) {
+            // "#EXTINF:<seconds>,<title>"; other comment lines are skipped.
+            if (trimmed.startsWith(QLatin1String("#EXTINF:"), Qt::CaseInsensitive)) {
+                const qsizetype comma = trimmed.indexOf(QLatin1Char(','));
+                title = comma < 0 ? QString() : trimmed.mid(comma + 1).trimmed();
+            }
+            continue;
+        }
+        Entry entry;
+        entry.filename = resolve(trimmed);
+        entry.title = std::exchange(title, QString());
+        entries.append(entry);
     }
     return entries;
+}
+
+PlaylistContents loadPlaylist(const QString &path)
+{
+    PlaylistContents contents;
+    const QFileInfo info(path);
+    if (!info.isFile() || !info.isReadable()) {
+        contents.readable = false;
+        return contents;
+    }
+    for (Entry &entry : readPlaylistEntries(path)) {
+        const QString local = MediaFiles::localPath(entry.filename);
+        if (!local.isEmpty() && !QFileInfo::exists(local)) {
+            ++contents.missing;
+            continue;
+        }
+        contents.entries.append(std::move(entry));
+    }
+    return contents;
 }
 
 } // namespace PlaylistOps

@@ -160,15 +160,11 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_emptyState, &EmptyStateWidget::openPlaylistRequested, this, &MainWindow::openPlaylistDialog);
     connect(m_emptyState, &EmptyStateWidget::urlsDropped, this, &MainWindow::openUrls);
     connect(m_mpv, &MpvWidget::fileStarted, m_emptyState, [this] { m_emptyState->setActive(false); });
-    // A station's name titles its stream only.
-    connect(m_mpv, &MpvWidget::fileStarted, this, [this] {
-        if (!m_streamUrl.isEmpty() && m_mpv->mpvPropertyString(QStringLiteral("path")) != m_streamUrl) {
-            m_streamUrl.clear();
-            m_mpv->setMpvProperty(QStringLiteral("force-media-title"), QString());
-        }
-    });
+    connect(m_mpv, &MpvWidget::fileFailed, this, &MainWindow::onFileFailed);
     connect(m_controlBar, &ControlBar::fullScreenRequested, this, &MainWindow::toggleFullScreen);
     connect(m_controlBar, &ControlBar::playlistToggled, this, &MainWindow::setPlaylistVisible);
+    connect(m_controlBar, &ControlBar::message, m_osd,
+            [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
 
     setupPlaylist();
     setupThumbnails();
@@ -281,15 +277,8 @@ void MainWindow::openFileDialog()
 void MainWindow::openFolderDialog()
 {
     const QString folder = QFileDialog::getExistingDirectory(this, tr("Open Folder"));
-    if (folder.isEmpty())
-        return;
-    m_osd->showValue(tr("Scanning Folder"), QFileInfo(folder).fileName());
-    MediaFiles::expandFoldersAsync({folder}, this, [this, folder](const QStringList &files) {
-        if (files.isEmpty())
-            m_osd->showValue(tr("No media files in"), QFileInfo(folder).fileName());
-        else
-            openFiles(files);
-    });
+    if (!folder.isEmpty())
+        m_playlist->openFolder(folder);
 }
 
 void MainWindow::openUrlDialog()
@@ -324,9 +313,7 @@ void MainWindow::openUrlDialog()
 
 void MainWindow::openPlaylistDialog()
 {
-    const QString file = QFileDialog::getOpenFileName(this, tr("Open Playlist"), {}, MediaFiles::playlistFileFilter());
-    if (!file.isEmpty())
-        m_mpv->loadPlaylist(file);
+    m_playlist->openPlaylistDialog();
 }
 
 void MainWindow::savePlaylistDialog()
@@ -357,18 +344,41 @@ void MainWindow::openLiveStreamDialog()
 
 void MainWindow::playStream(const StreamCatalog::Station &station, bool radio)
 {
-    m_streamUrl = station.url;
-    m_mpv->setMpvProperty(QStringLiteral("force-media-title"), station.name);
+    m_streamRadio = radio;
+    m_streamFallbacks = m_liveStreams ? m_liveStreams->alternatives(station) : QList<StreamCatalog::Station>();
+    startStream(station);
+    m_osd->showValue(radio ? tr("Streaming Radio:") : tr("Streaming:"), station.name);
+}
+
+void MainWindow::startStream(const StreamCatalog::Station &station)
+{
+    m_stream = station;
     // Radio streams are audio-only, so AudioController shows the audio view
     // with the chosen visualization as soon as the stream's tracks are known.
-    m_mpv->loadFile(station.url);
-    m_osd->showValue(radio ? tr("Streaming Radio:") : tr("Streaming:"), station.name);
+    m_mpv->loadStream(station.url, StreamCatalog::playbackOptions(station));
 }
 
 void MainWindow::queueStream(const StreamCatalog::Station &station)
 {
-    m_mpv->insertFiles({station.url});
+    m_mpv->loadStream(station.url, StreamCatalog::playbackOptions(station), true);
     m_osd->showValue(tr("Added to Playlist"), station.name);
+}
+
+void MainWindow::onFileFailed(const QString &path, const QString & /*error*/)
+{
+    if (m_liveStreams)
+        m_liveStreams->markUnavailable(path);
+    if (path.isEmpty() || path != m_stream.url)
+        return;
+    const QString name = m_stream.name;
+    m_stream = {};
+    if (!m_streamFallbacks.isEmpty()) {
+        startStream(m_streamFallbacks.takeFirst());
+        m_osd->showValue(tr("Trying another source:"), name);
+        return;
+    }
+    m_osd->showValue(m_streamRadio ? tr("Station unavailable:") : tr("Channel unavailable:"),
+                     tr("%1 (offline, or not available in your region)").arg(name));
 }
 
 bool MainWindow::startSession(bool restore)
@@ -416,12 +426,10 @@ bool MainWindow::isPlaylistVisible() const
 
 void MainWindow::setPlaylistVisible(bool visible)
 {
-    if (isFullScreen()) {
-        m_playlistBeforeFullScreen = visible;
-        m_controlBar->setPlaylistChecked(visible);
-        return;
-    }
+    // The drawer sits beside the video in the layout, in fullscreen too.
     m_drawer->setExpanded(visible);
+    if (visible)
+        m_drawer->raise();
 }
 
 void MainWindow::loadSubtitle(const QString &path)
@@ -728,14 +736,12 @@ void MainWindow::updateChrome()
 
     m_titleBar->setVisible(!fullScreen);
     m_controlBar->setVisible(!fullScreen);
+    // The playlist drawer stays as it is: only the user opens or closes it.
     if (fullScreen) {
-        m_playlistBeforeFullScreen = m_drawer->isExpanded();
-        m_drawer->setExpanded(false, false);
         m_idleTimer.start();
     } else {
         m_idleTimer.stop();
         m_mpv->unsetCursor();
-        m_drawer->setExpanded(m_playlistBeforeFullScreen, false);
     }
 }
 

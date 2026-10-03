@@ -30,10 +30,17 @@ public:
     void playFiles(const QStringList &files, int start);
     // Replaces the playlist with the entries of a playlist file (.m3u, .pls, ...).
     void loadPlaylist(const QString &path);
+    // Replaces the playlist with `files`, titled with `titles` (same order;
+    // empty ones keep mpv's own title), and plays the first.
+    void loadTitledFiles(const QStringList &files, const QStringList &titles);
     // Replaces the playlist with `files` without starting playback; Play
     // starts at entry `current`. With `resumeAt` >= 0, entry `current` is
     // opened paused at `resumeAt` seconds instead.
     void restorePlaylist(const QStringList &files, int current, double resumeAt = -1);
+    // Plays a stream, replacing the playlist, or with `append` adds it to the
+    // playlist (starting playback if idle). `options` are mpv options that
+    // apply to this entry only, e.g. {"referrer": "...", "force-media-title": "..."}.
+    void loadStream(const QString &url, const QVariantMap &options, bool append = false);
     // Queues files at playlist index `row` (-1 appends). Starts playback if idle.
     void insertFiles(const QStringList &files, int row = -1);
     // Adds an external subtitle file to the current file and selects it.
@@ -60,6 +67,9 @@ public:
     // Runs an mpv command asynchronously, e.g. {"seek", "5", "relative"}.
     // Commands run in order; none is dropped, however many are sent at once.
     void command(const QStringList &args);
+    // Runs an mpv command with named arguments, e.g. {"name": "loadfile", "url": ...},
+    // in order with the other commands.
+    void command(const QVariantMap &args);
 
     // Reads a property synchronously; maps and arrays become QVariantMap/QVariantList.
     QVariant mpvProperty(const QString &name) const;
@@ -92,6 +102,9 @@ Q_SIGNALS:
     void propertyUpdated(const QString &name, const QVariant &value);
     // Emitted as mpv starts opening a playlist entry.
     void fileStarted();
+    // Emitted when an entry could not be played, e.g. an offline stream.
+    // `path` is the entry as it was loaded; `error` is mpv's reason.
+    void fileFailed(const QString &path, const QString &error);
     // Emitted once the entry's tracks are known (see isAudioOnly()).
     void fileLoaded();
     // Emitted once playback resumes after a user seek.
@@ -112,8 +125,14 @@ private Q_SLOTS:
 private:
     static void onMpvWakeup(void *ctx);
     static void onMpvRenderUpdate(void *ctx);
+    struct QueuedCommand {
+        QStringList args;
+        QVariantMap named; // used instead of args if not empty
+        quint64 reply = 0;
+    };
     // Runs `commands` now, or once the render context exists.
     void runOrDefer(const QList<QStringList> &commands);
+    void runOrDefer(const QVariantMap &command);
     // Plays playlist entry `index`, clamped to the playlist. Returns false if it is empty.
     bool playIndex(int index);
     // Commands that add `files` to the playlist like loadfile with `flag`
@@ -123,7 +142,7 @@ private:
     QList<QStringList> queueCommands(const QStringList &files, const QString &flag);
     // Writes `files` to a new temporary M3U playlist; returns its path, or an
     // empty string on failure. It is deleted once mpv has read it.
-    QString writeBatch(const QStringList &files);
+    QString writeBatch(const QStringList &files, const QStringList &titles = {});
     // Sends queued commands while fewer than kMaxPendingReplies are unanswered.
     void sendQueuedCommands();
 
@@ -132,7 +151,7 @@ private:
     // Files requested before the GL context existed; loading them earlier
     // would make mpv's video output fail to initialize.
     // Commands that start playback, deferred until the render context exists.
-    QList<QStringList> m_pendingLoads;
+    QList<QueuedCommand> m_pendingLoads;
     QStringList m_pendingSubtitles;
     QString m_glRenderer;
     QSet<QString> m_initializedProperties;
@@ -155,10 +174,6 @@ private:
     quint64 m_nextBatch = 1;
     // mpv refuses asynchronous commands while ~1000 replies are pending, so
     // long runs of commands (moving thousands of entries) wait here instead.
-    struct QueuedCommand {
-        QStringList args;
-        quint64 reply = 0;
-    };
     QList<QueuedCommand> m_commandQueue;
     int m_pendingReplies = 0;
     // Reply id of the loadlist the queue waits for, or 0.

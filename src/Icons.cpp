@@ -24,6 +24,22 @@ QPainterPath polygon(std::initializer_list<QPointF> points)
     return path;
 }
 
+// A rounded loop with arrowheads, for the repeat modes.
+void drawRepeatLoop(QPainter &p)
+{
+    const QColor color = p.pen().color();
+    p.drawPolyline(QPolygonF({{4, 11}, {4, 7.5}, {5.5, 6}, {14, 6}}));
+    p.drawPolyline(QPolygonF({{16, 9}, {16, 12.5}, {14.5, 14}, {6, 14}}));
+    p.fillPath(polygon({{13.5, 3.5}, {17, 6}, {13.5, 8.5}}), color);
+    p.fillPath(polygon({{6.5, 11.5}, {3, 14}, {6.5, 16.5}}), color);
+}
+
+// A screen frame, for the aspect modes.
+void drawFrame(QPainter &p, const QRectF &rect)
+{
+    p.drawRoundedRect(rect, 1.5, 1.5);
+}
+
 void drawSpeaker(QPainter &p)
 {
     p.fillPath(polygon({{3, 7.5}, {6, 7.5}, {10, 4}, {10, 16}, {6, 12.5}, {3, 12.5}}), p.pen().color());
@@ -152,6 +168,36 @@ void drawIcon(QPainter &p, IconType type)
         p.drawPolyline(QPolygonF({{5, 5}, {10, 10}, {5, 15}}));
         p.drawPolyline(QPolygonF({{10, 5}, {15, 10}, {10, 15}}));
         break;
+    case IconType::Repeat:
+        drawRepeatLoop(p);
+        break;
+    case IconType::RepeatOne: {
+        drawRepeatLoop(p);
+        // A small "1" inside the loop.
+        QPen thin = p.pen();
+        thin.setWidthF(1.3);
+        p.setPen(thin);
+        p.drawPolyline(QPolygonF({{9, 8.8}, {10.3, 7.8}, {10.3, 12.2}}));
+        break;
+    }
+    case IconType::AspectFit:
+        // Arrows pushing out to the corners of the frame.
+        drawFrame(p, QRectF(2.5, 4.5, 15, 11));
+        p.drawPolyline(QPolygonF({{5.5, 9}, {5.5, 7.5}, {7, 7.5}}));
+        p.drawPolyline(QPolygonF({{13, 7.5}, {14.5, 7.5}, {14.5, 9}}));
+        p.drawPolyline(QPolygonF({{14.5, 11}, {14.5, 12.5}, {13, 12.5}}));
+        p.drawPolyline(QPolygonF({{7, 12.5}, {5.5, 12.5}, {5.5, 11}}));
+        break;
+    case IconType::AspectWide:
+        // A 16:9 frame between letterbox bars.
+        drawFrame(p, QRectF(2, 5.5, 16, 9));
+        p.fillRect(QRectF(4.5, 8, 11, 4), color);
+        break;
+    case IconType::AspectOriginal:
+        // Pixels at 1:1, a small picture centered in the frame.
+        drawFrame(p, QRectF(2.5, 4.5, 15, 11));
+        p.fillRect(QRectF(7.5, 8, 5, 4), color);
+        break;
     }
 }
 
@@ -176,6 +222,9 @@ QIcon skinIcon(IconType type)
     icon.addPixmap(renderIcon(type, kNormalColor), QIcon::Normal);
     icon.addPixmap(renderIcon(type, kActiveColor), QIcon::Active);
     icon.addPixmap(renderIcon(type, kDisabledColor), QIcon::Disabled);
+    const QPixmap on = renderIcon(type, Theme::Accent);
+    icon.addPixmap(on, QIcon::Normal, QIcon::On);
+    icon.addPixmap(on, QIcon::Active, QIcon::On);
     return icon;
 }
 

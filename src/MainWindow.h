@@ -48,7 +48,9 @@ public:
     // The Live TV & Radio browser; created on first use.
     void openLiveStreamDialog();
     LiveStreamDialog *liveStreamDialog() const { return m_liveStreams; }
-    // Plays a live stream, titled with the station's name.
+    // Plays a live stream, titled with the station's name and sent with the
+    // HTTP headers it needs. If it can't be played, the channel's other
+    // streams in the Live TV list are tried in turn.
     void playStream(const StreamCatalog::Station &station, bool radio);
     void queueStream(const StreamCatalog::Station &station);
     // Starts saving the queue for the next run and, if `restore`, reopens the
@@ -106,6 +108,8 @@ protected:
     void dropEvent(QDropEvent *event) override;
 
 private:
+    void startStream(const StreamCatalog::Station &station);
+    void onFileFailed(const QString &path, const QString &error);
     void setupPlaylist();
     void setupThumbnails();
     void onStateUpdated(const QString &name, const QVariant &value);
@@ -138,8 +142,10 @@ private:
     LiveStreamDialog *m_liveStreams = nullptr;
     AudioEffectsController *m_audioEffects = nullptr;
     AudioControlDialog *m_audioControl = nullptr;
-    // The stream whose station name is set as mpv's force-media-title.
-    QString m_streamUrl;
+    // The live stream played last, and its channel's untried other streams.
+    StreamCatalog::Station m_stream;
+    bool m_streamRadio = false;
+    QList<StreamCatalog::Station> m_streamFallbacks;
     QWidget *m_root = nullptr;
     QPointer<AboutDialog> m_about;
     QTimer m_idleTimer;
@@ -151,7 +157,6 @@ private:
     bool m_maximizedBeforeFullScreen = false;
     int m_hoverSecond = -1;
     QPoint m_popupAnchor;
-    bool m_playlistBeforeFullScreen = false;
     bool m_wasFullScreen = false;
     double m_clipIn = -1;
     double m_clipOut = -1;

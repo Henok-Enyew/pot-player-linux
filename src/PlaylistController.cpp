@@ -9,7 +9,9 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QInputDialog>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
 #include <functional>
@@ -165,17 +167,102 @@ void PlaylistController::addFolderDialog()
         addFolder(folder);
 }
 
+namespace {
+
+// "Music" for /home/me/Music, "/" for the root.
+QString folderName(const QString &folder)
+{
+    const QString name = QFileInfo(QDir::cleanPath(folder)).fileName();
+    return name.isEmpty() ? QDir::cleanPath(folder) : name;
+}
+
+// "5 items from Music", or with `added`, "Added 5 items from Music".
+QString itemsFrom(qsizetype count, const QString &source, bool added = false)
+{
+    if (added) {
+        return count == 1 ? PlaylistController::tr("Added 1 item from %1").arg(source)
+                          : PlaylistController::tr("Added %1 items from %2").arg(count).arg(source);
+    }
+    return count == 1 ? PlaylistController::tr("1 item from %1").arg(source)
+                      : PlaylistController::tr("%1 items from %2").arg(count).arg(source);
+}
+
+} // namespace
+
 void PlaylistController::addFolder(const QString &folder)
 {
-    Q_EMIT message(tr("Scanning Folder"), QFileInfo(folder).fileName());
-    MediaFiles::expandFoldersAsync({folder}, this, [this, folder](const QStringList &files) {
+    const QString name = folderName(folder);
+    // A folder that is gone would otherwise be queued as a file.
+    if (!QFileInfo(folder).isDir()) {
+        Q_EMIT message(tr("Folder not found"), name);
+        return;
+    }
+    Q_EMIT message(tr("Scanning Folder"), name);
+    MediaFiles::expandFoldersAsync({folder}, this, [this, name](const QStringList &files) {
         if (files.isEmpty()) {
-            Q_EMIT message(tr("No media files in"), QFileInfo(folder).fileName());
+            Q_EMIT message(tr("No media files in"), name);
             return;
         }
+        // One batch for mpv, however many files: playback goes on meanwhile.
         m_mpv->insertFiles(files);
-        Q_EMIT message(tr("Added to Playlist"), tr("%n file(s)", nullptr, static_cast<int>(files.size())));
+        Q_EMIT message(tr("Added to Playlist"), itemsFrom(files.size(), name, true));
     });
+}
+
+void PlaylistController::openFolder(const QString &folder)
+{
+    const QString name = folderName(folder);
+    // A folder that is gone would otherwise be queued as a file.
+    if (!QFileInfo(folder).isDir()) {
+        Q_EMIT message(tr("Folder not found"), name);
+        return;
+    }
+    Q_EMIT message(tr("Scanning Folder"), name);
+    MediaFiles::expandFoldersAsync({folder}, this, [this, name](const QStringList &files) {
+        if (files.isEmpty()) {
+            Q_EMIT message(tr("No media files in"), name);
+            return;
+        }
+        m_mpv->loadFiles(files);
+        Q_EMIT message(tr("Opened Folder"), itemsFrom(files.size(), name));
+    });
+}
+
+void PlaylistController::openPlaylistDialog()
+{
+    const QString path = QFileDialog::getOpenFileName(m_dialogParent, tr("Open Playlist"), {}, MediaFiles::playlistFileFilter());
+    if (!path.isEmpty())
+        openPlaylist(path);
+}
+
+void PlaylistController::openPlaylist(const QString &path)
+{
+    const QString name = QFileInfo(path).fileName();
+    auto *watcher = new QFutureWatcher<PlaylistOps::PlaylistContents>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, name] {
+        watcher->deleteLater();
+        const PlaylistOps::PlaylistContents contents = watcher->result();
+        if (!contents.readable) {
+            Q_EMIT message(tr("Could not open playlist"), name);
+            return;
+        }
+        if (contents.entries.isEmpty()) {
+            Q_EMIT message(contents.missing > 0 ? tr("Playlist files not found") : tr("Playlist is empty"), name);
+            return;
+        }
+        QStringList files;
+        QStringList titles;
+        for (const PlaylistOps::Entry &entry : contents.entries) {
+            files.append(entry.filename);
+            titles.append(entry.title);
+        }
+        m_mpv->loadTitledFiles(files, titles);
+        QString summary = itemsFrom(files.size(), name);
+        if (contents.missing > 0)
+            summary += QStringLiteral(" · ") + tr("%1 missing skipped").arg(contents.missing);
+        Q_EMIT message(tr("Opened Playlist"), summary);
+    });
+    watcher->setFuture(QtConcurrent::run(&PlaylistOps::loadPlaylist, path));
 }
 
 void PlaylistController::addEntries(const QStringList &entries, int row)
@@ -416,7 +503,7 @@ void PlaylistController::playFromLibrary(LibraryPanel::EntryType type, const QSt
         break;
     case EntryType::Playlist:
         if (start < 0) {
-            m_mpv->loadPlaylist(path);
+            openPlaylist(path);
         } else {
             const QStringList files = PlaylistOps::readPlaylist(path);
             if (!files.isEmpty())
@@ -457,7 +544,7 @@ void PlaylistController::queueFromLibrary(LibraryPanel::EntryType type, const QS
             return;
         }
         m_mpv->insertFiles(files);
-        Q_EMIT message(tr("Added to Playlist"), tr("%n file(s)", nullptr, static_cast<int>(files.size())));
+        Q_EMIT message(tr("Added to Playlist"), itemsFrom(files.size(), QFileInfo(path).fileName(), true));
         break;
     }
     case EntryType::File:

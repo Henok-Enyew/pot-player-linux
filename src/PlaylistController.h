@@ -41,6 +41,13 @@ public:
     void addEntries(const QStringList &entries, int row = -1);
     void savePlaylistDialog();
     bool savePlaylist(const QString &path);
+    void openPlaylistDialog();
+    // Replaces the playlist with the entries of an .m3u/.m3u8/.pls file, read
+    // in a worker thread. Titles are kept; local files that no longer exist
+    // are left out, and the OSD says what was opened.
+    void openPlaylist(const QString &path);
+    // Replaces the playlist with the media files in `folder` and its subfolders.
+    void openFolder(const QString &folder);
 
     void sort(PlaylistOps::SortKey key, bool ascending);
     void reverse();

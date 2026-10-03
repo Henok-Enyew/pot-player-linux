@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocale>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QRegularExpression>
@@ -51,44 +52,85 @@ QString parseExtinf(const QString &line, QHash<QString, QString> *attributes)
     return {};
 }
 
+// The country code of an iptv-org channel ID: "EBS.us@HD" -> "us".
+QString countryOfId(const QString &id)
+{
+    const QString channel = id.section(QLatin1Char('@'), 0, 0);
+    const QString code = channel.section(QLatin1Char('.'), -1);
+    return channel.contains(QLatin1Char('.')) && code.size() == 2 ? code.toLower() : QString();
+}
+
+// Splits "a, b" genre lists.
+QStringList splitGenres(const QString &genres)
+{
+    QStringList list = genres.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (QString &genre : list)
+        genre = genre.trimmed();
+    list.removeAll(QString());
+    return list;
+}
+
 } // namespace
 
 namespace StreamCatalog {
 
+const QString kBrowserUserAgent = QStringLiteral(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
+
+bool Station::isGeoBlocked() const
+{
+    return name.contains(QLatin1String("[Geo-blocked]"), Qt::CaseInsensitive);
+}
+
+QVariantMap playbackOptions(const Station &station)
+{
+    QVariantMap options{{QStringLiteral("force-media-title"), station.name}};
+    // Radio servers are left with mpv's own user agent: some SHOUTcast
+    // servers answer browsers with a web page instead of the stream.
+    const QString userAgent = !station.userAgent.isEmpty() ? station.userAgent : station.tv ? kBrowserUserAgent : QString();
+    if (!userAgent.isEmpty())
+        options.insert(QStringLiteral("user-agent"), userAgent);
+    if (!station.referrer.isEmpty()) {
+        options.insert(QStringLiteral("referrer"), station.referrer);
+        // Servers that check the referrer usually check the origin too.
+        const QUrl referrer(station.referrer);
+        if (referrer.isValid() && !referrer.host().isEmpty()) {
+            options.insert(QStringLiteral("http-header-fields"),
+                           QStringLiteral("Origin: %1").arg(referrer.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment).toString()));
+        }
+    }
+    // These are direct media URLs. Without this, a dead stream is handed to
+    // yt-dlp next, which can only fail again, slowly.
+    const QString host = QUrl(station.url).host();
+    if (!host.contains(QLatin1String("youtube.")) && !host.contains(QLatin1String("youtu.be")))
+        options.insert(QStringLiteral("ytdl"), QStringLiteral("no"));
+    // Give up on unreachable servers after 15 s instead of a minute.
+    options.insert(QStringLiteral("network-timeout"), QStringLiteral("15"));
+    return options;
+}
+
+QString countryName(const QString &code)
+{
+    if (code.size() != 2)
+        return {};
+    const QLocale::Territory territory = QLocale::codeToTerritory(code.toUpper());
+    return territory == QLocale::AnyTerritory ? QString() : QLocale::territoryToString(territory);
+}
+
 QList<Country> countries()
 {
-    QList<Country> list{
-        {QStringLiteral("ar"), QObject::tr("Argentina")},
-        {QStringLiteral("au"), QObject::tr("Australia")},
-        {QStringLiteral("br"), QObject::tr("Brazil")},
-        {QStringLiteral("ca"), QObject::tr("Canada")},
-        {QStringLiteral("cn"), QObject::tr("China")},
-        {QStringLiteral("dj"), QObject::tr("Djibouti")},
-        {QStringLiteral("eg"), QObject::tr("Egypt")},
-        {QStringLiteral("er"), QObject::tr("Eritrea")},
-        {QStringLiteral("fr"), QObject::tr("France")},
-        {QStringLiteral("de"), QObject::tr("Germany")},
-        {QStringLiteral("in"), QObject::tr("India")},
-        {QStringLiteral("it"), QObject::tr("Italy")},
-        {QStringLiteral("jp"), QObject::tr("Japan")},
-        {QStringLiteral("ke"), QObject::tr("Kenya")},
-        {QStringLiteral("mx"), QObject::tr("Mexico")},
-        {QStringLiteral("nl"), QObject::tr("Netherlands")},
-        {QStringLiteral("ng"), QObject::tr("Nigeria")},
-        {QStringLiteral("pt"), QObject::tr("Portugal")},
-        {QStringLiteral("ru"), QObject::tr("Russia")},
-        {QStringLiteral("sa"), QObject::tr("Saudi Arabia")},
-        {QStringLiteral("so"), QObject::tr("Somalia")},
-        {QStringLiteral("za"), QObject::tr("South Africa")},
-        {QStringLiteral("kr"), QObject::tr("South Korea")},
-        {QStringLiteral("es"), QObject::tr("Spain")},
-        {QStringLiteral("sd"), QObject::tr("Sudan")},
-        {QStringLiteral("se"), QObject::tr("Sweden")},
-        {QStringLiteral("tr"), QObject::tr("Turkey")},
-        {QStringLiteral("ae"), QObject::tr("United Arab Emirates")},
-        {QStringLiteral("gb"), QObject::tr("United Kingdom")},
-        {QStringLiteral("us"), QObject::tr("United States")},
-    };
+    // Every country Qt knows by its two-letter code (numeric codes are regions such as "Latin America").
+    QList<Country> list;
+    for (int i = QLocale::AnyTerritory + 1; i <= QLocale::LastTerritory; ++i) {
+        const auto territory = static_cast<QLocale::Territory>(i);
+        const QString code = QLocale::territoryToCode(territory).toLower();
+        static const QStringList kNotCountries{QStringLiteral("eu"), QStringLiteral("ez"), QStringLiteral("un"), QStringLiteral("qo")};
+        if (code.size() != 2 || !code[0].isLetter() || code == QLatin1String("et") || kNotCountries.contains(code))
+            continue;
+        if (std::any_of(list.cbegin(), list.cend(), [&code](const Country &c) { return c.code == code; }))
+            continue; // aliases of the same territory
+        list.append({code, QLocale::territoryToString(territory)});
+    }
     // Sorted in the user's language.
     std::sort(list.begin(), list.end(), [](const Country &a, const Country &b) {
         return QString::localeAwareCompare(a.name, b.name) < 0;
@@ -134,16 +176,37 @@ QList<Station> parseM3u(const QByteArray &data)
             pending.genre = attributes.value(QStringLiteral("group-title")).replace(QLatin1Char(';'), QStringLiteral(", "));
             pending.language = attributes.value(QStringLiteral("tvg-language")).replace(QLatin1Char(';'), QStringLiteral(", "));
             pending.country = attributes.value(QStringLiteral("tvg-country")).replace(QLatin1Char(';'), QStringLiteral(", "));
+            pending.id = attributes.value(QStringLiteral("tvg-id"));
+            if (pending.country.isEmpty())
+                pending.country = countryName(countryOfId(pending.id));
+            pending.referrer = attributes.value(QStringLiteral("http-referrer"));
+            pending.userAgent = attributes.value(QStringLiteral("http-user-agent"));
             if (pending.name.isEmpty())
                 pending.name = attributes.value(QStringLiteral("tvg-name"));
             const QRegularExpressionMatch quality = qualityPattern.match(pending.name);
             if (quality.hasMatch())
                 pending.quality = quality.captured(1);
             hasInfo = true;
+        } else if (line.startsWith(QLatin1String("#EXTVLCOPT:"), Qt::CaseInsensitive)) {
+            // Options for the next URL, as VLC reads them.
+            const QString option = line.mid(11).trimmed();
+            const QString key = option.section(QLatin1Char('='), 0, 0).trimmed().toLower();
+            const QString value = option.section(QLatin1Char('='), 1).trimmed();
+            if (key == QLatin1String("http-referrer") || key == QLatin1String("http-referer"))
+                pending.referrer = value;
+            else if (key == QLatin1String("http-user-agent"))
+                pending.userAgent = value;
         } else if (!line.startsWith(QLatin1Char('#'))) {
-            if (!hasInfo)
+            if (!hasInfo) {
+                // Keeps options given before a bare URL.
+                const QString referrer = pending.referrer;
+                const QString userAgent = pending.userAgent;
                 pending = Station();
+                pending.referrer = referrer;
+                pending.userAgent = userAgent;
+            }
             pending.url = line;
+            pending.tv = true;
             if (pending.name.isEmpty())
                 pending.name = line;
             stations.append(pending);
@@ -171,11 +234,7 @@ QList<Station> parseRadioBrowser(const QByteArray &data)
         station.logo = object.value(QStringLiteral("favicon")).toString().trimmed();
         station.country = object.value(QStringLiteral("country")).toString();
         station.language = object.value(QStringLiteral("language")).toString().replace(QLatin1Char(','), QStringLiteral(", "));
-        QStringList tags = object.value(QStringLiteral("tags")).toString().split(QLatin1Char(','), Qt::SkipEmptyParts);
-        for (QString &tag : tags)
-            tag = tag.trimmed();
-        tags.removeAll(QString());
-        station.genre = tags.join(QStringLiteral(", "));
+        station.genre = splitGenres(object.value(QStringLiteral("tags")).toString()).join(QStringLiteral(", "));
         station.bitrate = object.value(QStringLiteral("bitrate")).toInt();
         stations.append(station);
     }
@@ -192,6 +251,40 @@ bool matches(const Station &station, const QString &filter)
         }
         return false;
     });
+}
+
+QStringList genres(const QList<Station> &stations, int limit)
+{
+    // Counted case-insensitively, shown as most stations spell them.
+    QHash<QString, int> counts;
+    QHash<QString, QHash<QString, int>> spellings;
+    for (const Station &station : stations) {
+        for (const QString &genre : splitGenres(station.genre)) {
+            const QString key = genre.toLower();
+            ++counts[key];
+            ++spellings[key][genre];
+        }
+    }
+    QStringList keys = counts.keys();
+    std::sort(keys.begin(), keys.end(), [&counts](const QString &a, const QString &b) {
+        return counts[a] != counts[b] ? counts[a] > counts[b] : a < b;
+    });
+    if (limit >= 0 && keys.size() > limit)
+        keys.resize(limit);
+    QStringList result;
+    for (const QString &key : std::as_const(keys)) {
+        const QHash<QString, int> &forms = spellings[key];
+        result.append(std::max_element(forms.cbegin(), forms.cend()).key());
+    }
+    return result;
+}
+
+bool hasGenre(const Station &station, const QString &genre)
+{
+    if (genre.isEmpty())
+        return true;
+    const QStringList list = splitGenres(station.genre);
+    return std::any_of(list.cbegin(), list.cend(), [&genre](const QString &g) { return g.compare(genre, Qt::CaseInsensitive) == 0; });
 }
 
 QString cacheDir()

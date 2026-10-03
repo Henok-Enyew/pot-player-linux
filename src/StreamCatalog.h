@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QString>
 #include <QUrl>
+#include <QVariantMap>
 
 class QNetworkAccessManager;
 
@@ -23,7 +24,22 @@ struct Station {
     QString language;
     QString quality;  // e.g. "720p" from a channel name
     int bitrate = 0;  // kbit/s, 0 if unknown
+    QString id;       // iptv-org channel ID (tvg-id), e.g. "EBS.us@HD"; shared by a channel's alternative streams
+    // HTTP headers some servers insist on (#EXTVLCOPT:http-referrer=... and http-user-agent=...).
+    QString referrer;
+    QString userAgent;
+    bool tv = false;  // from an iptv-org playlist rather than Radio-Browser
+
+    // iptv-org marks channels "[Geo-blocked]" or "[Not 24/7]" in their names.
+    bool isGeoBlocked() const;
 };
+
+// Sent to servers that don't name a user agent of their own: many TV CDNs
+// turn away media players' default ones (libmpv, Lavf) with 403 Forbidden.
+extern const QString kBrowserUserAgent;
+
+// Per-entry mpv options for playing `station`: its title and HTTP headers.
+QVariantMap playbackOptions(const Station &station);
 
 struct Country {
     QString code; // ISO 3166-1 alpha-2, lower case
@@ -32,6 +48,8 @@ struct Country {
 
 // The countries offered for browsing: Ethiopia first, the rest by name.
 QList<Country> countries();
+// English name of an ISO 3166-1 alpha-2 code, e.g. "Kenya" for "ke"; empty if unknown.
+QString countryName(const QString &code);
 
 QUrl tvCountryUrl(const QString &code);
 QUrl tvCategoryIndexUrl();
@@ -45,6 +63,10 @@ QList<Station> parseRadioBrowser(const QByteArray &data);
 
 // True if every word of `filter` is in the station's name, genre, language or country.
 bool matches(const Station &station, const QString &filter);
+// The genres of `stations` (group-titles or tags), most common first, at most `limit`.
+QStringList genres(const QList<Station> &stations, int limit = -1);
+// True if `genre` is one of the station's genres (case-insensitive); an empty `genre` matches all.
+bool hasGenre(const Station &station, const QString &genre);
 
 // ~/.cache/top-player/streams (follows $XDG_CACHE_HOME).
 QString cacheDir();

@@ -33,6 +33,17 @@
   </developer>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.1" date="2026-10-03">
+      <description>
+        <ul>
+          <li>Live TV plays channels that need a referrer or user agent, and tries a channel's other streams when one fails</li>
+          <li>Live TV covers every country, with All Countries, a category filter and Hide geo-blocked</li>
+          <li>The playlist opens in fullscreen too</li>
+          <li>Shuffle, repeat (all or one) and aspect (fit, 16:9, 100%) buttons on the control bar</li>
+          <li>Opening a playlist keeps its titles, skips missing files and reports what was opened</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-10-03">
       <description>
         <ul>
