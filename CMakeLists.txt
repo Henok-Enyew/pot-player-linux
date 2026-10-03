@@ -51,6 +51,8 @@ add_library(pot-player-core OBJECT
     src/Icons.h
     src/LibraryPanel.cpp
     src/LibraryPanel.h
+    src/LiveStreamDialog.cpp
+    src/LiveStreamDialog.h
     src/MainWindow.cpp
     src/MainWindow.h
     src/MediaFiles.cpp
@@ -78,6 +80,8 @@ add_library(pot-player-core OBJECT
     src/PlaylistSession.h
     src/SeekBar.cpp
     src/SeekBar.h
+    src/StreamCatalog.cpp
+    src/StreamCatalog.h
     src/SubtitleDownloadDialog.cpp
     src/SubtitleDownloadDialog.h
     src/SubtitleSearch.cpp

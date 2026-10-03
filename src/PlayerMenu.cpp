@@ -203,6 +203,8 @@ void PlayerMenu::buildPlaybackMenu()
     addItem(this, tr("Open File..."), [this] { m_window->openFileDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_O));
     addItem(this, tr("Open Folder..."), [this] { m_window->openFolderDialog(); });
     addItem(this, tr("Open URL / Stream..."), [this] { m_window->openUrlDialog(); });
+    addItem(this, tr("Live TV && Radio..."), [this] { m_window->openLiveStreamDialog(); },
+            QKeySequence(Qt::CTRL | Qt::Key_L));
     addItem(this, tr("Open Playlist..."), [this] { m_window->openPlaylistDialog(); });
     addItem(this, tr("Save Playlist..."), [this] { m_window->savePlaylistDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_S));
     addSeparator();
@@ -247,7 +249,7 @@ void PlayerMenu::buildPlaybackMenu()
                QKeySequence(Qt::Key_X));
     addCommand(speed, tr("Normal Speed"), {QStringLiteral("set"), QStringLiteral("speed"), QStringLiteral("1")},
                QKeySequence(Qt::Key_Z));
-    addToggle(playback, tr("Loop File"), QStringLiteral("loop-file"), QKeySequence(Qt::CTRL | Qt::Key_L), true,
+    addToggle(playback, tr("Loop File"), QStringLiteral("loop-file"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L), true,
               QStringLiteral("inf"), QStringLiteral("no"));
 }
 

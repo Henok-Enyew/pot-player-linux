@@ -150,6 +150,30 @@ When a file opens, the window resizes to 100% of the video resolution
 (shrunk to fit the screen if needed). Use **Window > Window Size** or
 `Alt+1`..`Alt+4` to change it.
 
+### Live TV & Radio
+
+Right-click → **Live TV & Radio...** (`Ctrl+L`) opens a browser for free
+live streams, with two tabs:
+
+- **Live TV** lists the channels of a country from the
+  [iptv-org](https://github.com/iptv-org/iptv) playlists
+  (`https://iptv-org.github.io/iptv/countries/<code>.m3u`), or **All Channels
+  by Category** from its category index.
+- **Online Radio** lists the stations of a country from the community
+  [Radio-Browser](https://www.radio-browser.info) directory, most popular
+  first, with their tags and bitrate.
+
+Ethiopia is selected by default and pinned at the top of the country list;
+the other countries follow alphabetically. The search box filters by name,
+language or genre as you type, and **Refresh** reloads the list from the
+server. Channel logos load in the background for the rows on screen.
+Double-click a channel (or select it and press **Play**) to watch it, titled
+with the channel's name; radio stations open in the audio view with the
+chosen visualization. Right-click → **Add to Current Playlist** queues a
+stream instead. Lists and logos are cached in
+`~/.cache/potplayer-linux/streams/` for 24 hours, and the cached copy is used
+when the server can't be reached.
+
 ### Subtitles
 
 - Subtitles next to the video, or in a `sub`/`subs`/`subtitles` folder, load
@@ -188,7 +212,8 @@ When a file opens, the window resizes to 100% of the video resolution
 | Mouse wheel | Volume +/- 5 |
 | `M` | Mute |
 | `C` / `X` / `Z` | Speed +0.1 / -0.1 / reset |
-| `Ctrl+L` | Loop file |
+| `Ctrl+L` | Live TV & Radio browser |
+| `Ctrl+Shift+L` | Loop file |
 | `]` / `[` | Subtitle delay +/- 0.5 s |
 | `.` / `,` | Subtitle delay +/- 0.1 s |
 | `Ctrl+.` / `Ctrl+,` | Audio delay +/- 0.1 s |

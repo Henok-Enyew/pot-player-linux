@@ -2,6 +2,7 @@
 #include "AudioController.h"
 #include "ControlBar.h"
 #include "EmptyStateWidget.h"
+#include "LiveStreamDialog.h"
 #include "MediaFiles.h"
 #include "MpvWidget.h"
 #include "OsdWidget.h"
@@ -147,6 +148,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_emptyState, &EmptyStateWidget::openPlaylistRequested, this, &MainWindow::openPlaylistDialog);
     connect(m_emptyState, &EmptyStateWidget::urlsDropped, this, &MainWindow::openUrls);
     connect(m_mpv, &MpvWidget::fileStarted, m_emptyState, [this] { m_emptyState->setActive(false); });
+    // A station's name titles its stream only.
+    connect(m_mpv, &MpvWidget::fileStarted, this, [this] {
+        if (!m_streamUrl.isEmpty() && m_mpv->mpvPropertyString(QStringLiteral("path")) != m_streamUrl) {
+            m_streamUrl.clear();
+            m_mpv->setMpvProperty(QStringLiteral("force-media-title"), QString());
+        }
+    });
     connect(m_controlBar, &ControlBar::fullScreenRequested, this, &MainWindow::toggleFullScreen);
     connect(m_controlBar, &ControlBar::playlistToggled, this, &MainWindow::setPlaylistVisible);
 
@@ -301,6 +309,34 @@ void MainWindow::openPlaylistDialog()
 void MainWindow::savePlaylistDialog()
 {
     m_playlist->savePlaylistDialog();
+}
+
+void MainWindow::openLiveStreamDialog()
+{
+    if (!m_liveStreams) {
+        m_liveStreams = new LiveStreamDialog(this);
+        connect(m_liveStreams, &LiveStreamDialog::playRequested, this, &MainWindow::playStream);
+        connect(m_liveStreams, &LiveStreamDialog::queueRequested, this, &MainWindow::queueStream);
+    }
+    m_liveStreams->show();
+    m_liveStreams->raise();
+    m_liveStreams->activateWindow();
+}
+
+void MainWindow::playStream(const StreamCatalog::Station &station, bool radio)
+{
+    m_streamUrl = station.url;
+    m_mpv->setMpvProperty(QStringLiteral("force-media-title"), station.name);
+    // Radio streams are audio-only, so AudioController shows the audio view
+    // with the chosen visualization as soon as the stream's tracks are known.
+    m_mpv->loadFile(station.url);
+    m_osd->showValue(radio ? tr("Streaming Radio:") : tr("Streaming:"), station.name);
+}
+
+void MainWindow::queueStream(const StreamCatalog::Station &station)
+{
+    m_mpv->insertFiles({station.url});
+    m_osd->showValue(tr("Added to Playlist"), station.name);
 }
 
 bool MainWindow::startSession(bool restore)

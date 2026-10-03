@@ -1,5 +1,7 @@
 #pragma once
 
+#include "StreamCatalog.h"
+
 #include <QMainWindow>
 #include <QTimer>
 #include <QUrl>
@@ -7,6 +9,7 @@
 class AudioController;
 class ControlBar;
 class EmptyStateWidget;
+class LiveStreamDialog;
 class MpvWidget;
 class OsdWidget;
 class PlayerMenu;
@@ -36,6 +39,12 @@ public:
     void openUrlDialog();
     void openPlaylistDialog();
     void savePlaylistDialog();
+    // The Live TV & Radio browser; created on first use.
+    void openLiveStreamDialog();
+    LiveStreamDialog *liveStreamDialog() const { return m_liveStreams; }
+    // Plays a live stream, titled with the station's name.
+    void playStream(const StreamCatalog::Station &station, bool radio);
+    void queueStream(const StreamCatalog::Station &station);
     // Starts saving the queue for the next run and, if `restore`, reopens the
     // last one (as configured). Returns true if a queue was restored.
     bool startSession(bool restore);
@@ -92,6 +101,9 @@ private:
     AudioController *m_audio = nullptr;
     ThumbnailGenerator *m_thumbnails = nullptr;
     ThumbnailPopup *m_thumbnailPopup = nullptr;
+    LiveStreamDialog *m_liveStreams = nullptr;
+    // The stream whose station name is set as mpv's force-media-title.
+    QString m_streamUrl;
     QWidget *m_root = nullptr;
     QTimer m_idleTimer;
     int m_hoverSecond = -1;
