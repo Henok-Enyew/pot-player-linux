@@ -1,5 +1,6 @@
 #include "PlaylistDrawer.h"
 #include "Icons.h"
+#include "LibraryPanel.h"
 #include "MediaFiles.h"
 #include "MpvWidget.h"
 #include "PlaylistSession.h"
@@ -17,8 +18,11 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QPainter>
+#include <QMouseEvent>
 #include <QPropertyAnimation>
+#include <QStackedWidget>
 #include <QStyledItemDelegate>
+#include <QTabBar>
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -27,7 +31,11 @@
 
 namespace {
 
-constexpr int kDrawerWidth = 280;
+constexpr int kDefaultWidth = 280;
+constexpr int kMinimumWidth = 200;
+// Video left visible beside the drawer at its widest.
+constexpr int kMinimumVideoWidth = 160;
+constexpr int kHandleWidth = 5;
 constexpr int kAnimationMs = 180;
 const QColor kPlayingColor(0xFF, 0xB4, 0x1E);
 const QColor kDurationColor(0x8A, 0x8A, 0x8A);
@@ -90,6 +98,64 @@ public:
         painter->drawText(textRect, Qt::AlignRight | Qt::AlignVCenter, duration);
         painter->restore();
     }
+};
+
+// Strip along the drawer's left edge: drag it to resize the drawer,
+// double-click it to expand or restore the drawer.
+class ResizeHandle : public QWidget
+{
+public:
+    explicit ResizeHandle(PlaylistDrawer *drawer)
+        : QWidget(drawer)
+        , m_drawer(drawer)
+    {
+        setObjectName(QStringLiteral("PlaylistResizeHandle"));
+        setFixedWidth(kHandleWidth);
+        setCursor(Qt::SizeHorCursor);
+        setAttribute(Qt::WA_StyledBackground);
+        setAttribute(Qt::WA_Hover);
+        setToolTip(PlaylistDrawer::tr("Drag to resize, double-click to expand"));
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() != Qt::LeftButton)
+            return QWidget::mousePressEvent(event);
+        m_grabOffset = qRound(event->position().x());
+        m_dragging = true;
+        event->accept();
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (!m_dragging)
+            return QWidget::mouseMoveEvent(event);
+        const int right = m_drawer->mapToGlobal(QPoint(m_drawer->width(), 0)).x();
+        m_drawer->setPreferredWidth(right - qRound(event->globalPosition().x()) + m_grabOffset, false);
+        event->accept();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (!m_dragging || event->button() != Qt::LeftButton)
+            return QWidget::mouseReleaseEvent(event);
+        m_dragging = false;
+        m_drawer->setPreferredWidth(m_drawer->preferredWidth());
+        event->accept();
+    }
+
+    void mouseDoubleClickEvent(QMouseEvent *event) override
+    {
+        m_dragging = false;
+        m_drawer->setWide(!m_drawer->isWide());
+        event->accept();
+    }
+
+private:
+    PlaylistDrawer *m_drawer;
+    int m_grabOffset = 0;
+    bool m_dragging = false;
 };
 
 } // namespace
@@ -205,7 +271,11 @@ PlaylistDrawer::PlaylistDrawer(QWidget *parent)
     , m_view(new PlaylistView(this))
     , m_filter(new QLineEdit(this))
     , m_countLabel(new QLabel(this))
+    , m_tabs(new QTabBar(this))
+    , m_pages(new QStackedWidget(this))
+    , m_library(new LibraryPanel(this))
     , m_animation(new QPropertyAnimation(this, "drawerWidth", this))
+    , m_preferredWidth(std::max(kMinimumWidth, PlaylistSession::drawerWidth(kDefaultWidth)))
 {
     setObjectName(QStringLiteral("PlaylistDrawer"));
     m_view->setItemDelegate(new PlaylistItemDelegate(m_view));
@@ -223,23 +293,35 @@ PlaylistDrawer::PlaylistDrawer(QWidget *parent)
         return button;
     };
 
-    // Title and the editing buttons.
+    // Page tabs, the entry count and the expand button.
     auto *header = new QHBoxLayout;
-    header->setContentsMargins(10, 6, 6, 2);
+    header->setContentsMargins(6, 4, 6, 2);
     header->setSpacing(0);
-    auto *title = new QLabel(tr("Playlist"), this);
-    title->setObjectName(QStringLiteral("PlaylistTitle"));
+    m_tabs->setObjectName(QStringLiteral("PlaylistTabs"));
+    m_tabs->addTab(tr("Playlist"));
+    m_tabs->addTab(tr("Library"));
+    m_tabs->setDrawBase(false);
+    m_tabs->setExpanding(false);
+    m_tabs->setFocusPolicy(Qt::NoFocus);
     m_countLabel->setObjectName(QStringLiteral("PlaylistCount"));
-    header->addWidget(title);
-    header->addSpacing(4);
+    header->addWidget(m_tabs);
+    header->addSpacing(2);
     header->addWidget(m_countLabel);
     header->addStretch();
+    m_wideButton = makeButton(IconType::Expand, tr("Expand Playlist"), "PlaylistExpandButton");
+    header->addWidget(m_wideButton);
+
+    // The playlist's editing buttons.
+    auto *edit = new QHBoxLayout;
+    edit->setContentsMargins(8, 2, 6, 2);
+    edit->setSpacing(2);
     QToolButton *add = makeButton(IconType::Add, tr("Add Files..."), "PlaylistAddButton");
     QToolButton *addFolder = makeButton(IconType::Folder, tr("Add Folder..."), "PlaylistAddFolderButton");
     QToolButton *remove = makeButton(IconType::Remove, tr("Remove Selected (Del)"), "PlaylistRemoveButton");
     QToolButton *clear = makeButton(IconType::Clear, tr("Clear Playlist"), "PlaylistClearButton");
     for (QToolButton *button : {add, addFolder, remove, clear})
-        header->addWidget(button);
+        edit->addWidget(button);
+    edit->addStretch();
 
     // Search field and the arranging buttons.
     auto *tools = new QHBoxLayout;
@@ -250,7 +332,6 @@ PlaylistDrawer::PlaylistDrawer(QWidget *parent)
     m_filter->setClearButtonEnabled(true);
     m_filter->addAction(skinIcon(IconType::Search), QLineEdit::LeadingPosition);
     m_filter->installEventFilter(this);
-    tools->addWidget(m_filter, 1);
     QToolButton *shuffle = makeButton(IconType::Shuffle, tr("Shuffle"), "PlaylistShuffleButton");
     QToolButton *sort = makeButton(IconType::Sort, tr("Sort"), "PlaylistSortButton");
     QToolButton *more = makeButton(IconType::More, tr("More"), "PlaylistMenuButton");
@@ -261,14 +342,39 @@ PlaylistDrawer::PlaylistDrawer(QWidget *parent)
         button->setProperty("hideMenuIndicator", true);
     }
     for (QToolButton *button : {shuffle, sort, more})
-        tools->addWidget(button);
+        edit->addWidget(button);
+    tools->addWidget(m_filter, 1);
 
-    auto *layout = new QVBoxLayout(this);
+    auto *playlistPage = new QWidget(this);
+    auto *playlistLayout = new QVBoxLayout(playlistPage);
+    playlistLayout->setContentsMargins(0, 0, 0, 0);
+    playlistLayout->setSpacing(0);
+    playlistLayout->addLayout(edit);
+    playlistLayout->addLayout(tools);
+    playlistLayout->addWidget(m_view, 1);
+    m_pages->addWidget(playlistPage);
+    m_pages->addWidget(m_library);
+
+    auto *content = new QVBoxLayout;
+    content->setContentsMargins(0, 0, 0, 0);
+    content->setSpacing(0);
+    content->addLayout(header);
+    content->addWidget(m_pages, 1);
+
+    auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    layout->addLayout(header);
-    layout->addLayout(tools);
-    layout->addWidget(m_view, 1);
+    layout->addWidget(new ResizeHandle(this));
+    layout->addLayout(content, 1);
+
+    connect(m_tabs, &QTabBar::currentChanged, this, [this](int index) {
+        m_pages->setCurrentIndex(index);
+        m_countLabel->setVisible(index == PlaylistPage);
+    });
+    connect(m_wideButton, &QToolButton::clicked, this, [this] { setWide(!m_wide); });
+    // Follow the window's width while open, e.g. to stay wide.
+    if (parentWidget())
+        parentWidget()->installEventFilter(this);
 
     connect(m_view, &QListWidget::itemActivated, this,
             [this](QListWidgetItem *item) { Q_EMIT playRequested(m_view->row(item)); });
@@ -378,6 +484,11 @@ void PlaylistDrawer::showContextMenu(const QPoint &pos)
 
 bool PlaylistDrawer::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == parentWidget() && event->type() == QEvent::Resize) {
+        if (m_expanded && m_animation->state() != QAbstractAnimation::Running)
+            setDrawerWidth(targetWidth());
+        return QFrame::eventFilter(watched, event);
+    }
     if (watched == m_filter && (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress)) {
         // Keys the search field uses itself, which the player would otherwise take as hotkeys.
         const auto *key = static_cast<QKeyEvent *>(event);
@@ -489,14 +600,70 @@ void PlaylistDrawer::setExpanded(bool expanded, bool animate)
     if (expanded)
         show();
     if (animate) {
-        m_animation->setStartValue(width());
-        m_animation->setEndValue(expanded ? kDrawerWidth : 0);
-        m_animation->start();
+        animateTo(expanded ? targetWidth() : 0);
     } else {
-        setDrawerWidth(expanded ? kDrawerWidth : 0);
+        setDrawerWidth(expanded ? targetWidth() : 0);
         setVisible(expanded);
     }
     Q_EMIT expandedChanged(expanded);
+}
+
+void PlaylistDrawer::animateTo(int width)
+{
+    m_animation->stop();
+    m_animation->setStartValue(this->width());
+    m_animation->setEndValue(width);
+    m_animation->start();
+}
+
+PlaylistDrawer::Page PlaylistDrawer::currentPage() const
+{
+    return static_cast<Page>(m_tabs->currentIndex());
+}
+
+void PlaylistDrawer::setCurrentPage(Page page)
+{
+    m_tabs->setCurrentIndex(page);
+}
+
+int PlaylistDrawer::maximumDrawerWidth() const
+{
+    const int available = parentWidget() ? parentWidget()->width() - kMinimumVideoWidth : m_preferredWidth;
+    return std::max(kMinimumWidth, available);
+}
+
+int PlaylistDrawer::targetWidth() const
+{
+    return m_wide ? maximumDrawerWidth() : std::min(m_preferredWidth, maximumDrawerWidth());
+}
+
+void PlaylistDrawer::setWide(bool wide, bool animate)
+{
+    if (wide == m_wide)
+        return;
+    m_wide = wide;
+    m_wideButton->setIcon(skinIcon(wide ? IconType::Collapse : IconType::Expand));
+    m_wideButton->setToolTip(wide ? tr("Restore Playlist Size") : tr("Expand Playlist"));
+    if (m_expanded) {
+        if (animate)
+            animateTo(targetWidth());
+        else
+            setDrawerWidth(targetWidth());
+    }
+    Q_EMIT wideChanged(wide);
+}
+
+void PlaylistDrawer::setPreferredWidth(int width, bool save)
+{
+    // At most what fits beside the video now.
+    m_preferredWidth = std::clamp(width, kMinimumWidth, std::max(kMinimumWidth, maximumDrawerWidth()));
+    setWide(false, false);
+    if (m_expanded) {
+        m_animation->stop();
+        setDrawerWidth(targetWidth());
+    }
+    if (save)
+        PlaylistSession::setDrawerWidth(m_preferredWidth);
 }
 
 void PlaylistDrawer::setDrawerWidth(int width)

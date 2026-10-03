@@ -22,8 +22,8 @@ The AppImage is built on Ubuntu 24.04, so it needs glibc 2.39 or newer
 
 | Distro | Packages |
 | --- | --- |
-| Ubuntu / Debian | `build-essential cmake ninja-build pkg-config qt6-base-dev libgl-dev libmpv-dev` |
-| Fedora | `gcc-c++ cmake ninja-build pkgconf-pkg-config qt6-qtbase-devel mesa-libGL-devel mpv-devel` |
+| Ubuntu / Debian | `build-essential cmake ninja-build pkg-config qt6-base-dev libgl-dev libmpv-dev zlib1g-dev` |
+| Fedora | `gcc-c++ cmake ninja-build pkgconf-pkg-config qt6-qtbase-devel mesa-libGL-devel mpv-devel zlib-devel` |
 
 ### Compile
 
@@ -110,6 +110,25 @@ on top of Qt's Fusion style with a matching dark palette:
     start without files on the command line, reopening the last entry
     paused where it was left.
 
+  - **Resizable and expandable:** drag the drawer's left edge to make it
+    wider or narrower (the width is remembered), or click the expand button
+    in its header (or double-click the edge) to spread it over the video,
+    leaving a strip of the picture visible; click again to restore it.
+- **Library** (the drawer's second tab) keeps folders and playlists in the
+  player, saved in `~/.config/potplayer-linux/library.json`:
+  - **Add Folder to Library...** stores a folder; expand it to browse its
+    subfolders and media files. Double-click a folder to play all of it, or
+    a file to play its folder from that file on.
+  - **Save Current Playlist to Library...** stores the queue as a named
+    playlist (`~/.config/potplayer-linux/playlists/<name>.m3u8`), and **Add
+    Playlist File to Library...** references an existing `.m3u`/`.m3u8`/`.pls`.
+    Expand a playlist to see its entries and double-click one to play the
+    playlist from there.
+  - Right-click for **Add to Playlist**, **Rename...**, **Replace with Current
+    Playlist**, **Refresh** and **Remove from Library** (**Delete Playlist**
+    for playlists saved to the library, after confirming). Items can be
+    dragged onto the video or the playlist.
+
 In fullscreen the title bar, drawer and control bar are hidden; moving the
 pointer to the bottom edge reveals the control bar, and the controls and
 cursor hide again after two seconds without movement.
@@ -131,6 +150,47 @@ When a file opens, the window resizes to 100% of the video resolution
 (shrunk to fit the screen if needed). Use **Window > Window Size** or
 `Alt+1`..`Alt+4` to change it.
 
+### Audio Control & Equalizer
+
+**Audio → Audio Control & Equalizer...** (`F7`) adjusts the sound as you
+move the controls:
+
+- **Preamp** (-10 to +10 dB), **Bass** (110 Hz) and **Treble** (3 kHz),
+  both -15 to +20 dB.
+- A **10-band equalizer** (31 Hz to 16 kHz, ±12 dB) with presets: **Flat**,
+  **Bass Boost**, **Club**, **Rock**, **Vocal Clear** and **Cinema/Action**.
+- **Loudness Normalization (Night Mode)** evens out loud and quiet passages.
+- **Reset to Default** turns everything off.
+
+The effects are one FFmpeg filter graph in mpv's `af` property (`volume`,
+`bass`, `treble`, `equalizer` and `dynaudnorm`), so they apply to video and
+audio files alike, and are saved in
+`~/.config/potplayer-linux/audio_settings.json` for the next start.
+
+### Live TV & Radio
+
+Right-click → **Live TV & Radio...** (`Ctrl+L`) opens a browser for free
+live streams, with two tabs:
+
+- **Live TV** lists the channels of a country from the
+  [iptv-org](https://github.com/iptv-org/iptv) playlists
+  (`https://iptv-org.github.io/iptv/countries/<code>.m3u`), or **All Channels
+  by Category** from its category index.
+- **Online Radio** lists the stations of a country from the community
+  [Radio-Browser](https://www.radio-browser.info) directory, most popular
+  first, with their tags and bitrate.
+
+Ethiopia is selected by default and pinned at the top of the country list;
+the other countries follow alphabetically. The search box filters by name,
+language or genre as you type, and **Refresh** reloads the list from the
+server. Channel logos load in the background for the rows on screen.
+Double-click a channel (or select it and press **Play**) to watch it, titled
+with the channel's name; radio stations open in the audio view with the
+chosen visualization. Right-click → **Add to Current Playlist** queues a
+stream instead. Lists and logos are cached in
+`~/.cache/potplayer-linux/streams/` for 24 hours, and the cached copy is used
+when the server can't be reached.
+
 ### Subtitles
 
 - Subtitles next to the video, or in a `sub`/`subs`/`subtitles` folder, load
@@ -141,23 +201,48 @@ When a file opens, the window resizes to 100% of the video resolution
   `secondary-sid`) to show a second language at the top of the frame while
   the primary track stays at the bottom.
 - **Download subtitles** (`D`, or **Subtitles > Download Subtitles...**)
-  searches [OpenSubtitles.com](https://www.opensubtitles.com). The search is
-  filled in from the file name ("The.Matrix.1999.1080p.BluRay.mkv" becomes
-  *The Matrix*, 1999; "Show.S01E02" becomes season 1, episode 2), in your
-  system language, and with the file's
-  [movie hash](https://trac.opensubtitles.org/projects/opensubtitles/wiki/HashSourceCodes)
-  so subtitles made for this exact release are listed first as **Exact
-  match**. Type another title, pick another language, or click a column to
-  sort. **Download & Apply** (or double-click) saves the file next to the
-  video as `<video>.<language>.srt` (or in
-  `~/.cache/potplayer-linux/subtitles/` if that folder is read-only, or if
-  you choose so in the settings), loads it, selects it and shows it. `Esc`
-  stops a running search.
-- OpenSubtitles needs an API key: create a free one at
-  [opensubtitles.com/consumers](https://www.opensubtitles.com/consumers) and
-  enter it under **Subtitles > Subtitle Download Settings...** (also the
-  **Settings...** button in the dialog). Release builds may include a
-  default key; yours takes precedence.
+  needs no account or API key. The title is filled in from the file name
+  ("The.Matrix.1999.1080p.BluRay.mkv" becomes *The Matrix*, 1999;
+  "Show.S01E02" becomes season 1, episode 2), in your system language.
+  - **Search by Hash (Exact Match)** looks for subtitles made for this
+    exact file, by its OpenSubtitles
+    [movie hash](https://trac.opensubtitles.org/projects/opensubtitles/wiki/HashSourceCodes).
+    This uses OpenSubtitles, so it needs the build's built-in key or one of
+    your own (optional, under **Subtitles > Subtitle Download Settings...**);
+    otherwise, or for files under 128 KiB, it searches by name.
+  - **Search by Name** asks [podnapisi.net](https://www.podnapisi.net)
+    (no key needed), then OpenSubtitles if it is set up. Subtitles named
+    like your file are listed first as **Release match**.
+  - **Download & Play** (or double-click) saves the subtitle in
+    `~/.cache/potplayer-linux/subtitles/` (or next to the video, if you
+    choose so in the settings), selects it and shows it. `Esc` or
+    **Cancel** stops a running search. Being offline, a slow server or no
+    matches gives a message in the dialog, nothing more.
+
+### Tools
+
+- **Cut / Extract Media** (`Ctrl+X`, or **Tools > Cut / Extract Media...**):
+  mark the range while playing with `Ctrl+[` (In-point A) and `Ctrl+]`
+  (Out-point B); cyan brackets show it on the seekbar. The dialog takes the
+  range (editable as `HH:MM:SS.zzz`, with **Use Current Time** buttons) and
+  writes it with `ffmpeg`, either as a **lossless stream copy** (instant; the
+  picture starts at the first keyframe in the range) or as **audio only**
+  (MP3, AAC or FLAC). The clip is saved as `<title>_clip.<ext>` next to the
+  file by default. A progress dialog follows ffmpeg and can cancel it; when
+  done, **Open in Player** or **Show in File Manager**. Needs `ffmpeg`
+  (`sudo dnf install ffmpeg` from RPM Fusion, or `sudo apt install ffmpeg`).
+- **Download from URL** (`Ctrl+Shift+D`): downloads from YouTube, TikTok,
+  Instagram, X, Vimeo and the other sites
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports. A link on the
+  clipboard is filled in. Pick **Best Video + Audio**, **4K**, **1080p**,
+  **720p** or **Audio Only (.mp3)** and a folder (`~/Videos` by default);
+  progress, speed and ETA show while it runs, and the file can play as soon
+  as it is done. **Direct Stream** plays the link in mpv without saving it.
+  Needs `yt-dlp` (`sudo dnf install yt-dlp`, `sudo apt install yt-dlp` or
+  `pip install --user yt-dlp`).
+
+The Flatpak can't run the host's `ffmpeg` or `yt-dlp`, so these two tools
+are only available in the AppImage, RPM and source builds.
 
 | Input | Action |
 | --- | --- |
@@ -169,16 +254,21 @@ When a file opens, the window resizes to 100% of the video resolution
 | Mouse wheel | Volume +/- 5 |
 | `M` | Mute |
 | `C` / `X` / `Z` | Speed +0.1 / -0.1 / reset |
-| `Ctrl+L` | Loop file |
+| `Ctrl+L` | Live TV & Radio browser |
+| `Ctrl+Shift+L` | Loop file |
 | `]` / `[` | Subtitle delay +/- 0.5 s |
 | `.` / `,` | Subtitle delay +/- 0.1 s |
 | `Ctrl+.` / `Ctrl+,` | Audio delay +/- 0.1 s |
 | `Alt+L` / `Alt+Shift+L` | Next subtitle / next secondary subtitle |
 | `Alt+H` / `Alt+Shift+H` | Show / hide subtitles / secondary subtitles |
 | `D` | Download subtitles |
+| `F7` | Audio Control & Equalizer |
 | `Alt+Up` / `Alt+Down` | Move subtitles up / down |
 | `Alt+PgUp` / `Alt+PgDn` | Subtitle size |
 | `Ctrl+D` | Deinterlace |
+| `Ctrl+[` / `Ctrl+]` | Set cut In-point (A) / Out-point (B) |
+| `Ctrl+X` | Cut / extract media |
+| `Ctrl+Shift+D` | Download from URL |
 | `Ctrl+E` | Screenshot (saved to `~/Pictures`) |
 | `Ctrl+O` | Open files |
 | `PgUp` / `PgDn` | Previous / next file in the playlist |
@@ -220,11 +310,12 @@ publishes a GitHub Release with the packages and a `SHA256SUMS` file:
    and commit.
 2. `git tag v0.2.0 && git push origin v0.2.0`
 
-To build in a default OpenSubtitles API key, add it as the repository secret
+To build in a default OpenSubtitles API key (for exact subtitle matches), add it as the repository secret
 `OPENSUBTITLES_API_KEY`; the workflow passes it to all three builds (locally:
 set `$OPENSUBTITLES_API_KEY`, or put the key in an untracked
-`opensubtitles-api-key.txt`, before running CMake). Without one, users enter
-their own key.
+`opensubtitles-api-key.txt`, before running CMake). Without one, subtitle
+search still works through podnapisi.net, but exact (hash) matches need
+users to enter a key of their own.
 
 A tag with a suffix such as `v0.2.0-rc1` is published as a pre-release.
 

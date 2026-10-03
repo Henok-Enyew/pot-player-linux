@@ -20,6 +20,8 @@ include(GNUInstallDirs)
 find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Network OpenGL OpenGLWidgets)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
+# Unpacks the ZIP archives subtitle sites hand out.
+find_package(ZLIB REQUIRED)
 
 # OpenSubtitles.com needs an API key. One built in here is used unless the
 # user enters their own in the subtitle download settings. Release builds
@@ -39,8 +41,12 @@ add_library(pot-player-core OBJECT
     src/ArtworkExtractor.h
     src/AudioArtwork.cpp
     src/AudioArtwork.h
+    src/AudioControlDialog.cpp
+    src/AudioControlDialog.h
     src/AudioController.cpp
     src/AudioController.h
+    src/AudioEffects.cpp
+    src/AudioEffects.h
     src/AudioView.cpp
     src/AudioView.h
     src/ControlBar.cpp
@@ -49,10 +55,24 @@ add_library(pot-player-core OBJECT
     src/EmptyStateWidget.h
     src/Icons.cpp
     src/Icons.h
+    src/LibraryPanel.cpp
+    src/LibraryPanel.h
+    src/LiveStreamDialog.cpp
+    src/LiveStreamDialog.h
     src/MainWindow.cpp
     src/MainWindow.h
+    src/MediaCutter.cpp
+    src/MediaCutter.h
+    src/MediaCutterDialog.cpp
+    src/MediaCutterDialog.h
+    src/MediaDownloader.cpp
+    src/MediaDownloader.h
+    src/MediaDownloaderDialog.cpp
+    src/MediaDownloaderDialog.h
     src/MediaFiles.cpp
     src/MediaFiles.h
+    src/MediaLibrary.cpp
+    src/MediaLibrary.h
     src/MediaProber.cpp
     src/MediaProber.h
     src/MpvHelpers.h
@@ -65,6 +85,8 @@ add_library(pot-player-core OBJECT
     src/PlayerMenu.cpp
     src/PlayerMenu.h
     src/PlaylistController.cpp
+    src/PodnapisiClient.cpp
+    src/PodnapisiClient.h
     src/PlaylistController.h
     src/PlaylistDrawer.cpp
     src/PlaylistDrawer.h
@@ -74,8 +96,14 @@ add_library(pot-player-core OBJECT
     src/PlaylistSession.h
     src/SeekBar.cpp
     src/SeekBar.h
+    src/StreamCatalog.cpp
+    src/StreamCatalog.h
     src/SubtitleDownloadDialog.cpp
     src/SubtitleDownloadDialog.h
+    src/SubtitleFinder.cpp
+    src/SubtitleFinder.h
+    src/SubtitleHasher.cpp
+    src/SubtitleHasher.h
     src/SubtitleSearch.cpp
     src/SubtitleSearch.h
     src/Theme.cpp
@@ -87,6 +115,8 @@ add_library(pot-player-core OBJECT
     src/TimeFormat.h
     src/TitleBar.cpp
     src/TitleBar.h
+    src/ZipArchive.cpp
+    src/ZipArchive.h
 )
 
 target_include_directories(pot-player-core PUBLIC src)
@@ -109,6 +139,7 @@ target_link_libraries(pot-player-core PUBLIC
     Qt6::OpenGL
     Qt6::OpenGLWidgets
     PkgConfig::MPV
+    ZLIB::ZLIB
 )
 
 add_executable(pot-player src/main.cpp)

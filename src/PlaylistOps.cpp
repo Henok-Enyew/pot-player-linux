@@ -2,8 +2,10 @@
 #include "MediaFiles.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QMap>
 #include <QSaveFile>
 
 #include <algorithm>
@@ -171,6 +173,46 @@ bool writeM3u(const QString &path, const QList<Entry> &entries, QString *error)
         return false;
     }
     return true;
+}
+
+QStringList readPlaylist(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'));
+    const QDir base = QFileInfo(path).absoluteDir();
+    auto resolve = [&base](const QString &entry) {
+        if (entry.contains(QLatin1String("://"))) {
+            const QString local = MediaFiles::localPath(entry);
+            return local.isEmpty() ? entry : local;
+        }
+        return QDir::cleanPath(base.absoluteFilePath(entry));
+    };
+
+    QStringList entries;
+    if (QFileInfo(path).suffix().toLower() == QLatin1String("pls")) {
+        // "FileN=..." lines, in the order of N.
+        QMap<int, QString> files;
+        for (const QString &line : lines) {
+            const QString trimmed = line.trimmed();
+            const qsizetype equals = trimmed.indexOf(QLatin1Char('='));
+            if (equals < 0 || !trimmed.startsWith(QLatin1String("File"), Qt::CaseInsensitive))
+                continue;
+            bool ok = false;
+            const int number = trimmed.mid(4, equals - 4).toInt(&ok);
+            const QString value = trimmed.mid(equals + 1).trimmed();
+            if (ok && !value.isEmpty())
+                files.insert(number, resolve(value));
+        }
+        return files.values();
+    }
+    for (const QString &line : lines) {
+        const QString trimmed = line.trimmed();
+        if (!trimmed.isEmpty() && !trimmed.startsWith(QLatin1Char('#')))
+            entries.append(resolve(trimmed));
+    }
+    return entries;
 }
 
 } // namespace PlaylistOps

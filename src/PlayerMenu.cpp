@@ -49,6 +49,7 @@ PlayerMenu::PlayerMenu(MpvWidget *mpv, MainWindow *window)
     buildVideoMenu();
     buildAudioMenu();
     buildSubtitleMenu();
+    buildToolsMenu();
     addSeparator();
     buildWindowMenu();
 
@@ -104,6 +105,9 @@ void PlayerMenu::buildAudioMenu()
     addCommand(audio, tr("Audio Delay -0.1s"), {QStringLiteral("add"), QStringLiteral("audio-delay"), QStringLiteral("-0.1")},
                QKeySequence(Qt::CTRL | Qt::Key_Comma));
     addCommand(audio, tr("Reset Audio Delay"), {QStringLiteral("set"), QStringLiteral("audio-delay"), QStringLiteral("0")});
+    audio->addSeparator();
+    addItem(audio, tr("Audio Control && Equalizer..."), [this] { m_window->openAudioControlDialog(); },
+            QKeySequence(Qt::Key_F7));
     audio->addSeparator();
     buildVisualizationMenu(audio);
 }
@@ -203,6 +207,10 @@ void PlayerMenu::buildPlaybackMenu()
     addItem(this, tr("Open File..."), [this] { m_window->openFileDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_O));
     addItem(this, tr("Open Folder..."), [this] { m_window->openFolderDialog(); });
     addItem(this, tr("Open URL / Stream..."), [this] { m_window->openUrlDialog(); });
+    addItem(this, tr("Live TV && Radio..."), [this] { m_window->openLiveStreamDialog(); },
+            QKeySequence(Qt::CTRL | Qt::Key_L));
+    addItem(this, tr("Download from URL..."), [this] { m_window->openMediaDownloaderDialog(); },
+            QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D));
     addItem(this, tr("Open Playlist..."), [this] { m_window->openPlaylistDialog(); });
     addItem(this, tr("Save Playlist..."), [this] { m_window->savePlaylistDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_S));
     addSeparator();
@@ -247,8 +255,22 @@ void PlayerMenu::buildPlaybackMenu()
                QKeySequence(Qt::Key_X));
     addCommand(speed, tr("Normal Speed"), {QStringLiteral("set"), QStringLiteral("speed"), QStringLiteral("1")},
                QKeySequence(Qt::Key_Z));
-    addToggle(playback, tr("Loop File"), QStringLiteral("loop-file"), QKeySequence(Qt::CTRL | Qt::Key_L), true,
+    addToggle(playback, tr("Loop File"), QStringLiteral("loop-file"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L), true,
               QStringLiteral("inf"), QStringLiteral("no"));
+}
+
+void PlayerMenu::buildToolsMenu()
+{
+    QMenu *tools = addMenu(tr("Tools"));
+    // [ and ] alone are the subtitle delay keys, as in PotPlayer.
+    addItem(tools, tr("Set In-Point (A)"), [this] { m_window->setClipIn(); },
+            QKeySequence(Qt::CTRL | Qt::Key_BracketLeft));
+    addItem(tools, tr("Set Out-Point (B)"), [this] { m_window->setClipOut(); },
+            QKeySequence(Qt::CTRL | Qt::Key_BracketRight));
+    addItem(tools, tr("Clear In/Out Points"), [this] { m_window->clearClipRange(); });
+    tools->addSeparator();
+    addItem(tools, tr("Cut / Extract Media..."), [this] { m_window->openMediaCutterDialog(); },
+            QKeySequence(Qt::CTRL | Qt::Key_X));
 }
 
 void PlayerMenu::buildWindowMenu()

@@ -141,6 +141,15 @@ void drawIcon(QPainter &p, IconType type)
         p.drawEllipse(QPointF(8.5, 8.5), 4.5, 4.5);
         p.drawLine(QPointF(12, 12), QPointF(16.5, 16.5));
         break;
+    case IconType::Expand:
+        // Double chevron pointing left: the drawer grows into the video.
+        p.drawPolyline(QPolygonF({{10, 5}, {5, 10}, {10, 15}}));
+        p.drawPolyline(QPolygonF({{15, 5}, {10, 10}, {15, 15}}));
+        break;
+    case IconType::Collapse:
+        p.drawPolyline(QPolygonF({{5, 5}, {10, 10}, {5, 15}}));
+        p.drawPolyline(QPolygonF({{10, 5}, {15, 10}, {10, 15}}));
+        break;
     }
 }
 

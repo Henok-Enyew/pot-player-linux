@@ -92,6 +92,7 @@ SeekBar {
     qproperty-hoverColor: rgba(255, 255, 255, 50);
     qproperty-handleColor: #f0f0f0;
     qproperty-chapterColor: #202020;
+    qproperty-clipColor: #3fc1ff;
     min-height: 18px;
 }
 
@@ -174,9 +175,30 @@ QSlider#VolumeSlider::handle:horizontal:hover {
     border-left: 1px solid #2a2a2a;
 }
 
-#PlaylistTitle {
-    color: #d6d6d6;
+#PlaylistResizeHandle {
+    background: transparent;
+}
+
+#PlaylistResizeHandle:hover {
+    background: rgba(255, 180, 30, 0.35);
+}
+
+QTabBar#PlaylistTabs::tab {
+    background: transparent;
+    color: #8a8a8a;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 4px 8px;
     font-weight: bold;
+}
+
+QTabBar#PlaylistTabs::tab:hover {
+    color: #d6d6d6;
+}
+
+QTabBar#PlaylistTabs::tab:selected {
+    color: #d6d6d6;
+    border-bottom-color: #ffb41e;
 }
 
 #PlaylistCount {
@@ -221,6 +243,29 @@ QListWidget#PlaylistView::item:hover {
 }
 
 QListWidget#PlaylistView::item:selected {
+    background: #2f2f2f;
+    color: #ffffff;
+}
+
+QTreeWidget#LibraryView {
+    background: #181818;
+    color: #c8c8c8;
+    border: none;
+    border-top: 1px solid #262626;
+    outline: none;
+    padding: 2px 0;
+}
+
+QTreeWidget#LibraryView::item {
+    padding: 4px 2px;
+    border: none;
+}
+
+QTreeWidget#LibraryView::item:hover {
+    background: #242424;
+}
+
+QTreeWidget#LibraryView::item:selected {
     background: #2f2f2f;
     color: #ffffff;
 }

@@ -19,3 +19,19 @@ add_test(NAME tst_audio COMMAND tst_audio)
 add_executable(tst_subtitles tst_subtitles.cpp)
 target_link_libraries(tst_subtitles PRIVATE pot-player-core Qt6::Test)
 add_test(NAME tst_subtitles COMMAND tst_subtitles)
+
+add_executable(tst_library tst_library.cpp)
+target_link_libraries(tst_library PRIVATE pot-player-core Qt6::Test)
+add_test(NAME tst_library COMMAND tst_library)
+
+add_executable(tst_livestreams tst_livestreams.cpp)
+target_link_libraries(tst_livestreams PRIVATE pot-player-core Qt6::Test)
+add_test(NAME tst_livestreams COMMAND tst_livestreams)
+
+add_executable(tst_equalizer tst_equalizer.cpp)
+target_link_libraries(tst_equalizer PRIVATE pot-player-core Qt6::Test)
+add_test(NAME tst_equalizer COMMAND tst_equalizer)
+
+add_executable(tst_tools tst_tools.cpp)
+target_link_libraries(tst_tools PRIVATE pot-player-core Qt6::Test)
+add_test(NAME tst_tools COMMAND tst_tools)

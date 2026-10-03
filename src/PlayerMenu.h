@@ -41,6 +41,7 @@ private:
     void buildVisualizationMenu(QMenu *audio);
     void buildSubtitleMenu();
     void buildPlaybackMenu();
+    void buildToolsMenu();
     void buildWindowMenu();
 
     QAction *addItem(QMenu *menu, const QString &text, std::function<void()> handler,

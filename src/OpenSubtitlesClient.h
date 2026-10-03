@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SubtitleSearch.h"
+
 #include <QList>
 #include <QObject>
 #include <QPointer>
@@ -12,34 +14,16 @@ class QNetworkAccessManager;
 class QNetworkReply;
 
 // A client for the OpenSubtitles.com REST API (v1), built on Qt Network.
+// It needs an API key (see SubtitleSearch::apiKey()); it is the provider
+// that matches subtitles to a file by its movie hash.
 // Every request is asynchronous; results arrive through the signals.
 class OpenSubtitlesClient : public QObject
 {
     Q_OBJECT
 
 public:
-    struct Query {
-        QString text;          // title to search for; may be empty with a hash
-        QStringList languages; // OpenSubtitles codes ("en", "pt-BR"); empty for all
-        QString movieHash;     // 16 hex digits, or empty
-        int year = 0;
-        int season = -1;
-        int episode = -1;
-    };
-
-    struct Result {
-        int fileId = 0;
-        QString language;
-        QString fileName;
-        QString release;
-        qint64 downloads = 0;
-        double rating = 0;     // 0-10, 0 if not rated
-        QString format;        // "srt", "ass", ...
-        bool hearingImpaired = false;
-        bool hashMatch = false; // made for this exact file
-        bool machineTranslated = false;
-        QString uploader;
-    };
+    using Query = SubtitleQuery;
+    using Result = SubtitleResult;
 
     explicit OpenSubtitlesClient(QObject *parent = nullptr);
 
@@ -48,7 +32,6 @@ public:
     void setBaseUrl(const QUrl &url) { m_baseUrl = url; }
     void setApiKey(const QString &key) { m_apiKey = key; }
     QString apiKey() const { return m_apiKey; }
-    static QByteArray userAgent();
 
     // Searches; searchFinished() or failed() follows. Replaces a running search.
     void search(const Query &query);
