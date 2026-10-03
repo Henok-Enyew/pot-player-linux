@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=Pot Player
+Name=Top Player
 GenericName=Media Player
-Comment=Play video and audio files with a PotPlayer-style interface
-Exec=pot-player %U
-Icon=org.github.potlinux
+Comment=High-performance, lightweight media player powered by Qt6 and libmpv
+Exec=top-player %U
+Icon=org.github.topplayer
 Terminal=false
 Categories=AudioVideo;Video;Player;Qt;
 Keywords=video;movie;audio;music;player;mpv;subtitles;
 MimeType=video/mp4;video/x-matroska;video/webm;video/x-msvideo;video/quicktime;video/mpeg;video/ogg;video/x-flv;video/3gpp;video/mp2t;video/x-ms-wmv;audio/mpeg;audio/flac;audio/ogg;audio/x-wav;audio/mp4;audio/x-matroska;application/x-subrip;text/x-ssa;
-StartupWMClass=pot-player
+StartupWMClass=top-player

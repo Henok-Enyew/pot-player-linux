@@ -1,4 +1,5 @@
 #include "ThumbnailPopup.h"
+#include "Theme.h"
 #include "TimeFormat.h"
 
 #include <QPainter>
@@ -68,9 +69,9 @@ void ThumbnailPopup::showAt(const QPoint &anchor)
 void ThumbnailPopup::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
-    p.fillRect(rect(), QColor(0x55, 0x55, 0x55));
+    p.fillRect(rect(), Theme::Border);
     const QRect inner = rect().adjusted(kBorder, kBorder, -kBorder, -kBorder);
-    p.fillRect(inner, QColor(0x10, 0x10, 0x10));
+    p.fillRect(inner, Theme::Surface);
 
     const QSize image = imageSize();
     if (!image.isEmpty()) {
@@ -82,6 +83,6 @@ void ThumbnailPopup::paintEvent(QPaintEvent *)
     QFont font = p.font();
     font.setBold(true);
     p.setFont(font);
-    p.setPen(QColor(0xFF, 0xB4, 0x1E));
+    p.setPen(Theme::Accent);
     p.drawText(band, Qt::AlignCenter, m_time);
 }

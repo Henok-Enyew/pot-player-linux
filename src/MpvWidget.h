@@ -1,11 +1,15 @@
 #pragma once
 
+#include <QHash>
 #include <QOpenGLWidget>
 #include <QSet>
 #include <QSize>
 #include <QStringList>
 #include <QVariant>
 
+#include <memory>
+
+class QTemporaryDir;
 struct mpv_handle;
 struct mpv_render_context;
 
@@ -54,13 +58,19 @@ public:
     int lastPlaylistPos() const { return m_lastPlaylistPos; }
 
     // Runs an mpv command asynchronously, e.g. {"seek", "5", "relative"}.
+    // Commands run in order; none is dropped, however many are sent at once.
     void command(const QStringList &args);
 
     // Reads a property synchronously; maps and arrays become QVariantMap/QVariantList.
     QVariant mpvProperty(const QString &name) const;
     QString mpvPropertyString(const QString &name) const;
-    // Sets a property asynchronously from its string form, e.g. ("speed", "1.5").
+    // Sets a property asynchronously from its string form, e.g. ("speed", "1.5"),
+    // in order with the commands sent before it.
     void setMpvProperty(const QString &name, const QString &value);
+
+    // The OpenGL renderer the video is drawn with, e.g. "Mesa Intel(R) UHD
+    // Graphics 620 (KBL GT2)"; empty until the widget is first shown.
+    QString glRenderer() const { return m_glRenderer; }
 
     // Tracks of `type` ("video", "audio" or "sub") from mpv's track-list.
     QList<QVariantMap> tracks(const QString &type) const;
@@ -106,6 +116,16 @@ private:
     void runOrDefer(const QList<QStringList> &commands);
     // Plays playlist entry `index`, clamped to the playlist. Returns false if it is empty.
     bool playIndex(int index);
+    // Commands that add `files` to the playlist like loadfile with `flag`
+    // ("replace", "append" or "append-play"). Runs of several files are
+    // written to a temporary playlist and added with a single loadlist, so a
+    // big folder costs mpv one command and the UI one playlist update.
+    QList<QStringList> queueCommands(const QStringList &files, const QString &flag);
+    // Writes `files` to a new temporary M3U playlist; returns its path, or an
+    // empty string on failure. It is deleted once mpv has read it.
+    QString writeBatch(const QStringList &files);
+    // Sends queued commands while fewer than kMaxPendingReplies are unanswered.
+    void sendQueuedCommands();
 
     mpv_handle *m_mpv = nullptr;
     mpv_render_context *m_renderCtx = nullptr;
@@ -114,6 +134,7 @@ private:
     // Commands that start playback, deferred until the render context exists.
     QList<QStringList> m_pendingLoads;
     QStringList m_pendingSubtitles;
+    QString m_glRenderer;
     QSet<QString> m_initializedProperties;
     QSet<QString> m_stateProperties;
     bool m_fileLoaded = false;
@@ -126,4 +147,20 @@ private:
     bool m_idle = true;
     // Playlist entry that played last; mpv forgets it on stop.
     int m_lastPlaylistPos = -1;
+    // Temporary playlists from writeBatch(): not yet sent, and sent awaiting
+    // their command reply (by reply id).
+    std::unique_ptr<QTemporaryDir> m_batchDir;
+    QSet<QString> m_batchFiles;
+    QHash<quint64, QString> m_batchReplies;
+    quint64 m_nextBatch = 1;
+    // mpv refuses asynchronous commands while ~1000 replies are pending, so
+    // long runs of commands (moving thousands of entries) wait here instead.
+    struct QueuedCommand {
+        QStringList args;
+        quint64 reply = 0;
+    };
+    QList<QueuedCommand> m_commandQueue;
+    int m_pendingReplies = 0;
+    // Reply id of the loadlist the queue waits for, or 0.
+    quint64 m_awaitedBatch = 0;
 };

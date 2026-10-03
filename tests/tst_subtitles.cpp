@@ -271,8 +271,8 @@ void SubtitleTest::initTestCase()
     }
 
     QVERIFY(m_server.listen());
-    qputenv("POTPLAYER_OPENSUBTITLES_URL", m_server.url(QStringLiteral("/api/v1")).toUtf8());
-    qputenv("POTPLAYER_PODNAPISI_URL", m_server.url(QString()).toUtf8());
+    qputenv("TOPPLAYER_OPENSUBTITLES_URL", m_server.url(QStringLiteral("/api/v1")).toUtf8());
+    qputenv("TOPPLAYER_PODNAPISI_URL", m_server.url(QString()).toUtf8());
 }
 
 MockServer::Response SubtitleTest::defaultResponse(const MockServer::Request &request)
@@ -566,7 +566,7 @@ void SubtitleTest::searchesWithoutKey()
     QCOMPARE(dialog->movieHash(), SubtitleHasher::hash(m_video));
 
     // No key, no OpenSubtitles: only podnapisi.net was asked, by name, as
-    // PotPlayerLinux.
+    // TopPlayer.
     QVERIFY(requests(QStringLiteral("/api/")).isEmpty());
     const QList<MockServer::Request> searches = requests(QStringLiteral("/subtitles/search/old"));
     QCOMPARE(searches.size(), 1);
@@ -576,7 +576,7 @@ void SubtitleTest::searchesWithoutKey()
     QCOMPARE(query.queryItemValue(QStringLiteral("sL")), QStringLiteral("en"));
     QCOMPARE(query.queryItemValue(QStringLiteral("sY")), QStringLiteral("1999"));
     const QByteArray agent = searches.first().headers.value("user-agent");
-    QCOMPARE(agent, QByteArray("PotPlayerLinux/" APP_VERSION " (Linux; Qt6)"));
+    QCOMPARE(agent, QByteArray("TopPlayer/" APP_VERSION " (Linux; Qt6)"));
     QVERIFY(!agent.contains("VLC"));
     QVERIFY(!searches.first().headers.contains("api-key"));
 
@@ -743,7 +743,7 @@ void SubtitleTest::noResults()
 void SubtitleTest::offline()
 {
     // Nothing listens on port 1.
-    qputenv("POTPLAYER_PODNAPISI_URL", "http://127.0.0.1:1");
+    qputenv("TOPPLAYER_PODNAPISI_URL", "http://127.0.0.1:1");
     m_window->activateWindow();
     m_mpv->setFocus();
     QTRY_VERIFY(m_window->isActiveWindow());
@@ -755,7 +755,7 @@ void SubtitleTest::offline()
     QVERIFY(!dialog->isBusy());
     QVERIFY(!dialog->findChild<QProgressBar *>(QStringLiteral("SubtitleProgress"))->isVisible());
     QVERIFY(m_mpv->isVisible()); // and the player carries on
-    qputenv("POTPLAYER_PODNAPISI_URL", m_server.url(QString()).toUtf8());
+    qputenv("TOPPLAYER_PODNAPISI_URL", m_server.url(QString()).toUtf8());
 }
 
 void SubtitleTest::badDownload()

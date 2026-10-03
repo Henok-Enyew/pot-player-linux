@@ -1,6 +1,7 @@
 #include "PlaylistSession.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -37,7 +38,33 @@ namespace PlaylistSession {
 
 QString configDir()
 {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/potplayer-linux");
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/top-player");
+}
+
+void migrateLegacyConfig()
+{
+    const QString target = configDir();
+    const QDir legacy(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+                      + QStringLiteral("/potplayer-linux"));
+    if (QFileInfo::exists(target) || !legacy.exists())
+        return;
+    QDirIterator it(legacy.path(), QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString source = it.next();
+        const QString copy = target + QLatin1Char('/') + legacy.relativeFilePath(source);
+        if (QDir().mkpath(QFileInfo(copy).absolutePath()))
+            QFile::copy(source, copy);
+    }
+    QDir().mkpath(target);
+
+    // The library lists its saved playlists by path; point it at the copies.
+    QFile library(target + QStringLiteral("/library.json"));
+    if (library.exists() && library.open(QIODevice::ReadWrite)) {
+        QByteArray json = library.readAll();
+        json.replace((legacy.path() + QLatin1Char('/')).toUtf8(), (target + QLatin1Char('/')).toUtf8());
+        library.resize(0);
+        library.write(json);
+    }
 }
 
 QString sessionFile()

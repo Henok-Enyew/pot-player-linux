@@ -1,16 +1,15 @@
 #include "PlaylistDrawer.h"
 #include "Icons.h"
 #include "LibraryPanel.h"
-#include "MediaFiles.h"
 #include "MpvWidget.h"
 #include "PlaylistSession.h"
+#include "Theme.h"
 #include "TimeFormat.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QDragEnterEvent>
 #include <QDropEvent>
-#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
@@ -37,24 +36,24 @@ constexpr int kMinimumWidth = 200;
 constexpr int kMinimumVideoWidth = 160;
 constexpr int kHandleWidth = 5;
 constexpr int kAnimationMs = 180;
-const QColor kPlayingColor(0xFF, 0xB4, 0x1E);
-const QColor kDurationColor(0x8A, 0x8A, 0x8A);
+const QColor kPlayingColor = Theme::Accent;
+const QColor kDurationColor = Theme::TextSecondary;
 // Item data: the entry's filename, and its duration text.
 constexpr int kFilenameRole = Qt::UserRole;
 constexpr int kDurationRole = Qt::UserRole + 1;
 constexpr int kDurationGap = 8;
 
-QStringList mediaFiles(const QMimeData *mime)
+// Dropped files, folders and URLs, without subtitle files. Folders are
+// expanded later, off the GUI thread.
+QStringList droppedEntries(const QMimeData *mime)
 {
-    QStringList files;
+    QStringList entries;
     for (const QUrl &url : mime->urls()) {
         const QString path = url.isLocalFile() ? url.toLocalFile() : url.toString();
-        if (url.isLocalFile() && QFileInfo(path).isDir())
-            files.append(MediaFiles::mediaFilesInFolder(path));
-        else if (!url.isLocalFile() || !MpvWidget::isSubtitleFile(path))
-            files.append(path);
+        if (!url.isLocalFile() || !MpvWidget::isSubtitleFile(path))
+            entries.append(path);
     }
-    return files;
+    return entries;
 }
 
 // Short duration text: m:ss below an hour, h:mm:ss above.
@@ -239,9 +238,9 @@ void PlaylistView::dropEvent(QDropEvent *event)
                 ++target;
         }
     } else {
-        const QStringList files = mediaFiles(event->mimeData());
-        if (!files.isEmpty())
-            Q_EMIT filesDropped(files, row);
+        const QStringList entries = droppedEntries(event->mimeData());
+        if (!entries.isEmpty())
+            Q_EMIT filesDropped(entries, row);
     }
     // The playlist is rebuilt from mpv, so the view must not move anything itself.
     event->setDropAction(Qt::IgnoreAction);
@@ -519,27 +518,32 @@ bool PlaylistDrawer::eventFilter(QObject *watched, QEvent *event)
 void PlaylistDrawer::setEntries(const QVariantList &playlist, const QList<double> &durations)
 {
     const int previousRow = m_view->currentRow();
+    // Rebuild in one go: no repaints in between, and each item is complete
+    // before it is added, so the view hears of it once.
+    m_view->setUpdatesEnabled(false);
     m_view->clear();
+    QFont playingFont = m_view->font();
+    playingFont.setBold(true);
     for (int i = 0; i < playlist.size(); ++i) {
         const QVariantMap entry = playlist[i].toMap();
         const QString filename = entry.value(QStringLiteral("filename")).toString();
         const QString name = PlaylistOps::displayName({filename, entry.value(QStringLiteral("title")).toString()});
 
-        auto *item = new QListWidgetItem(QStringLiteral("%1. %2").arg(i + 1).arg(name), m_view);
+        auto *item = new QListWidgetItem(QStringLiteral("%1. %2").arg(i + 1).arg(name));
         item->setToolTip(filename);
         item->setData(kFilenameRole, filename);
         if (i < durations.size())
             item->setData(kDurationRole, durationText(durations[i]));
         if (entry.value(QStringLiteral("current")).toBool()) {
-            QFont font = item->font();
-            font.setBold(true);
-            item->setFont(font);
+            item->setFont(playingFont);
             item->setForeground(kPlayingColor);
         }
+        m_view->addItem(item);
     }
     if (previousRow >= 0 && previousRow < m_view->count())
         m_view->setCurrentRow(previousRow, QItemSelectionModel::NoUpdate);
     applyFilter();
+    m_view->setUpdatesEnabled(true);
 }
 
 void PlaylistDrawer::setDurations(const QList<double> &durations)
@@ -573,7 +577,8 @@ void PlaylistDrawer::applyFilter()
         const bool matches = std::all_of(words.cbegin(), words.cend(), [&](const QString &word) {
             return name.contains(word, Qt::CaseInsensitive) || path.contains(word, Qt::CaseInsensitive);
         });
-        m_view->setRowHidden(row, !matches);
+        if (m_view->isRowHidden(row) == matches)
+            m_view->setRowHidden(row, !matches);
     }
     updateCount();
 }

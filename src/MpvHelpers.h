@@ -7,8 +7,11 @@
 
 #include <vector>
 
-// Runs an mpv command asynchronously, e.g. {"seek", "5", "relative"}.
-inline void mpvCommandAsync(mpv_handle *mpv, const QStringList &args)
+namespace MpvDetail {
+
+// Runs `run` with `args` as a null-terminated argv of UTF-8 strings.
+template<typename Run>
+int withArgv(const QStringList &args, Run run)
 {
     std::vector<QByteArray> storage;
     storage.reserve(args.size());
@@ -19,5 +22,16 @@ inline void mpvCommandAsync(mpv_handle *mpv, const QStringList &args)
         argv.push_back(storage.back().constData());
     }
     argv.push_back(nullptr);
-    mpv_command_async(mpv, 0, argv.data());
+    return run(argv.data());
+}
+
+} // namespace MpvDetail
+
+// Runs an mpv command asynchronously, e.g. {"seek", "5", "relative"}.
+// `reply` comes back as the reply_userdata of its MPV_EVENT_COMMAND_REPLY.
+// Returns mpv's error code: the command did not run if it is negative, e.g.
+// MPV_ERROR_EVENT_QUEUE_FULL while about a thousand replies are pending.
+inline int mpvCommandAsync(mpv_handle *mpv, const QStringList &args, uint64_t reply = 0)
+{
+    return MpvDetail::withArgv(args, [mpv, reply](const char **argv) { return mpv_command_async(mpv, reply, argv); });
 }

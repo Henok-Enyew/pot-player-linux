@@ -32,7 +32,7 @@ private:
 // Subtitles -> Download Subtitles...: finds subtitles for the playing file
 // without any account or key (podnapisi.net, plus OpenSubtitles' exact
 // matches when the build has a key), downloads the chosen one to
-// ~/.cache/potplayer-linux/subtitles and hands it to the player.
+// ~/.cache/top-player/subtitles and hands it to the player.
 class SubtitleDownloadDialog : public QDialog
 {
     Q_OBJECT

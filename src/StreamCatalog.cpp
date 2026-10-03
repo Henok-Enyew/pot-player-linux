@@ -19,7 +19,7 @@
 namespace {
 
 constexpr int kTransferTimeoutMs = 20000;
-const QByteArray kUserAgent = QByteArrayLiteral("PotPlayerLinux/" APP_VERSION);
+const QByteArray kUserAgent = QByteArrayLiteral("TopPlayer/" APP_VERSION);
 
 // Reads the key="value" attributes of an #EXTINF line up to the comma that
 // starts the title, which may itself contain commas.
@@ -196,7 +196,7 @@ bool matches(const Station &station, const QString &filter)
 
 QString cacheDir()
 {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + QStringLiteral("/potplayer-linux/streams");
+    return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + QStringLiteral("/top-player/streams");
 }
 
 QString cacheFile(const QString &key)

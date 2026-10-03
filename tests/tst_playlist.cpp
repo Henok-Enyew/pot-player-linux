@@ -15,6 +15,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
 #include <QLabel>
@@ -23,12 +24,14 @@
 #include <QMenu>
 #include <QProcess>
 #include <QRandomGenerator>
+#include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
 #include <QToolButton>
 
+#include <algorithm>
 #include <clocale>
 #include <cmath>
 #include <functional>
@@ -91,6 +94,7 @@ private Q_SLOTS:
     void savePlaylistDialogAddsSuffix();
     void sessionRestore();
     void sessionDisabled();
+    void largeFolderStaysResponsive();
 
 private:
     QVariant prop(const char *name) const { return m_mpv->mpvProperty(QString::fromLatin1(name)); }
@@ -529,6 +533,69 @@ void PlaylistTest::sessionDisabled()
     createWindow();
     QVERIFY(!m_window->startSession(true));
     PlaylistSession::setRememberPlaylist(true);
+}
+
+void PlaylistTest::largeFolderStaysResponsive()
+{
+    // Hard links to one clip make a big folder cheaply.
+    constexpr int kFiles = 5000;
+    const QString big = m_dir.filePath(QStringLiteral("big"));
+    if (!QFileInfo::exists(big)) {
+        QVERIFY(QDir().mkpath(big));
+        for (int i = 0; i < kFiles; ++i) {
+            const QString link = big + QStringLiteral("/clip %1.mkv").arg(i, 4, 10, QLatin1Char('0'));
+            if (!QFile::link(m_expected.first(), link) && !QFile::copy(m_expected.first(), link))
+                QFAIL("could not create the test folder");
+        }
+    }
+    QSignalSpy videoSize(m_mpv, &MpvWidget::videoSizeKnown);
+    load({m_expected[0], m_expected[1]});
+    // Opening the clip resizes the window to the video; let that settle first.
+    QTRY_VERIFY_WITH_TIMEOUT(!videoSize.isEmpty(), 10000);
+    QTest::qWait(200);
+
+    // Measure how long the event loop stalls while the folder is added.
+    QElapsedTimer clock;
+    qint64 lastTick = 0;
+    qint64 longestStall = 0;
+    QTimer ticker;
+    ticker.setInterval(5);
+    connect(&ticker, &QTimer::timeout, this, [&] {
+        const qint64 now = clock.elapsed();
+        longestStall = std::max(longestStall, now - lastTick);
+        lastTick = now;
+    });
+    clock.start();
+    ticker.start();
+
+    m_window->playlist()->addFolder(big);
+    const qint64 returned = clock.elapsed();
+    QTRY_COMPARE_WITH_TIMEOUT(m_view->count(), kFiles + 2, 30000);
+    QTRY_COMPARE_WITH_TIMEOUT(prop("playlist-count").toInt(), kFiles + 2, 30000);
+    const qint64 total = clock.elapsed();
+    ticker.stop();
+    qInfo("addFolder returned after %lld ms; %d entries listed after %lld ms; longest stall %lld ms",
+          returned, kFiles, total, longestStall);
+    // Scanning used to block the window, and only about the first thousand
+    // files reached mpv. A freeze would take seconds; this leaves room for
+    // slow machines.
+    QVERIFY2(returned < 50, qPrintable(QStringLiteral("addFolder blocked for %1 ms").arg(returned)));
+    QVERIFY2(longestStall < 250, qPrintable(QStringLiteral("the window stalled for %1 ms").arg(longestStall)));
+
+    QCOMPARE(prop("playlist-pos").toInt(), 0);
+    QCOMPARE(mpvFiles().mid(2, 3), (QStringList{big + QStringLiteral("/clip 0000.mkv"), big + QStringLiteral("/clip 0001.mkv"),
+                                                big + QStringLiteral("/clip 0002.mkv")}));
+    QCOMPARE(viewFiles(), mpvFiles());
+
+    // Thousands of playlist edits at once overflow mpv's queue of pending
+    // replies; none of them may be lost.
+    QStringList reversed = mpvFiles();
+    std::reverse(reversed.begin(), reversed.end());
+    clock.restart();
+    m_window->playlist()->reverse();
+    qInfo("reversing %d entries took %lld ms", kFiles + 2, clock.elapsed());
+    QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), reversed, 30000);
+    QTRY_COMPARE(viewFiles(), reversed);
 }
 
 int main(int argc, char *argv[])

@@ -41,7 +41,7 @@ PodnapisiClient::PodnapisiClient(QObject *parent)
     , m_network(new QNetworkAccessManager(this))
     , m_baseUrl(QStringLiteral("https://www.podnapisi.net"))
 {
-    const QString override = qEnvironmentVariable("POTPLAYER_PODNAPISI_URL");
+    const QString override = qEnvironmentVariable("TOPPLAYER_PODNAPISI_URL");
     if (!override.isEmpty())
         m_baseUrl = QUrl(override);
 }

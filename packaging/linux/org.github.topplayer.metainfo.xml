@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>org.github.potlinux</id>
+  <id>org.github.topplayer</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
-  <name>Pot Player</name>
-  <summary>Lightweight media player with a PotPlayer-style interface</summary>
+  <name>Top Player</name>
+  <summary>High-performance, lightweight native media player</summary>
   <description>
     <p>
-      Pot Player is a Qt6 media player for Linux built on libmpv. It brings
-      the look and keyboard workflow of PotPlayer to the Linux desktop.
+      Top Player is a high-performance, lightweight native media player for
+      Linux powered by Qt6 and libmpv, with a borderless cyan-on-obsidian skin
+      and a keyboard-driven workflow.
     </p>
     <ul>
       <li>Borderless dark skin with an on-screen display</li>
@@ -17,20 +18,32 @@
       <li>Audio view with album art, metadata and visualizations</li>
       <li>Dual subtitles, subtitle delay and position hotkeys</li>
       <li>Subtitle search and download from OpenSubtitles.com</li>
+      <li>10-band audio equalizer with presets</li>
       <li>Hardware-accelerated decoding through mpv</li>
     </ul>
   </description>
-  <launchable type="desktop-id">org.github.potlinux.desktop</launchable>
+  <launchable type="desktop-id">org.github.topplayer.desktop</launchable>
   <provides>
-    <binary>pot-player</binary>
+    <binary>top-player</binary>
   </provides>
   <url type="homepage">https://github.com/henok-enyew/pot-player-linux</url>
   <url type="bugtracker">https://github.com/henok-enyew/pot-player-linux/issues</url>
   <developer id="io.github.henok-enyew">
-    <name>pot-player-linux contributors</name>
+    <name>Henok Enyew Andargie</name>
   </developer>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.0" date="2026-10-03">
+      <description>
+        <ul>
+          <li>Renamed to Top Player, with a new icon and a cyan and obsidian skin</li>
+          <li>About dialog with version, credits and system details (F1)</li>
+          <li>Click the video to pause, double-click for fullscreen</li>
+          <li>Adding large folders and playlists no longer freezes the window</li>
+          <li>10-band audio equalizer with presets</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-10-03">
       <description>
         <ul>

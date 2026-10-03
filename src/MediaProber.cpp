@@ -73,13 +73,15 @@ void MediaProber::probe(const QStringList &entries)
     if (!m_mpv)
         return;
     for (const QString &entry : entries) {
-        if (m_durations.contains(entry) || entry == m_current || m_queue.contains(entry))
+        if (m_durations.contains(entry) || entry == m_current || m_queued.contains(entry))
             continue;
         // Streams would mean network traffic; only local media files are probed.
-        const QString local = MediaFiles::localPath(entry);
-        if (local.isEmpty() || !QFileInfo(local).isFile())
+        // Missing files are not checked for here, which would stat every entry
+        // of a long playlist on the GUI thread: mpv fails to open them instead.
+        if (MediaFiles::localPath(entry).isEmpty())
             continue;
         m_queue.append(entry);
+        m_queued.insert(entry);
     }
     startNext();
 }
@@ -89,7 +91,8 @@ void MediaProber::setDuration(const QString &entry, double seconds)
     if (seconds < 0)
         return;
     m_durations.insert(entry, seconds);
-    m_queue.removeAll(entry);
+    if (m_queued.remove(entry))
+        m_queue.removeAll(entry);
 }
 
 double MediaProber::duration(const QString &entry) const
@@ -106,6 +109,7 @@ void MediaProber::startNext()
         return;
     }
     m_current = m_queue.takeFirst();
+    m_queued.remove(m_current);
     m_watchdog.start();
     mpvCommandAsync(m_mpv, {QStringLiteral("loadfile"), MediaFiles::localPath(m_current), QStringLiteral("replace")});
 }

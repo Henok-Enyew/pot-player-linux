@@ -1,4 +1,5 @@
 #include "AudioView.h"
+#include "Theme.h"
 
 #include <QEvent>
 #include <QLinearGradient>
@@ -11,11 +12,11 @@
 
 namespace {
 
-const QColor kBackground(0x12, 0x12, 0x12);
-const QColor kTitleColor(0xF2, 0xF2, 0xF2);
-const QColor kArtistColor(0xFF, 0xB4, 0x1E); // PotPlayer amber
-const QColor kAlbumColor(0x9A, 0x9A, 0x9A);
-const QColor kPlaceholderColor(0x24, 0x24, 0x24);
+const QColor kBackground = Theme::Surface;
+const QColor kTitleColor = Theme::TextPrimary;
+const QColor kArtistColor = Theme::Accent;
+const QColor kAlbumColor = Theme::TextSecondary;
+const QColor kPlaceholderColor = Theme::Raised;
 
 constexpr int kMargin = 24;
 constexpr int kTextGap = 18;

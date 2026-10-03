@@ -11,7 +11,7 @@ class QNetworkAccessManager;
 
 // Live TV channels from the iptv-org playlists and radio stations from the
 // Radio-Browser community directory: where to get them, how to read them, and
-// the cache in ~/.cache/potplayer-linux/streams/.
+// the cache in ~/.cache/top-player/streams/.
 namespace StreamCatalog {
 
 struct Station {
@@ -46,7 +46,7 @@ QList<Station> parseRadioBrowser(const QByteArray &data);
 // True if every word of `filter` is in the station's name, genre, language or country.
 bool matches(const Station &station, const QString &filter);
 
-// ~/.cache/potplayer-linux/streams (follows $XDG_CACHE_HOME).
+// ~/.cache/top-player/streams (follows $XDG_CACHE_HOME).
 QString cacheDir();
 QString cacheFile(const QString &key);
 // Cached copies are used without asking the server for this long.

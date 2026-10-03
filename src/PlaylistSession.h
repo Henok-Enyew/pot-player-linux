@@ -4,7 +4,7 @@
 
 #include <optional>
 
-// The queue saved between runs in ~/.config/potplayer-linux/last_playlist.json,
+// The queue saved between runs in ~/.config/top-player/last_playlist.json,
 // and the settings that control whether it is restored.
 namespace PlaylistSession {
 
@@ -14,8 +14,11 @@ struct State {
     double position = 0;  // seconds into `current`
 };
 
-// ~/.config/potplayer-linux (follows $XDG_CONFIG_HOME).
+// ~/.config/top-player (follows $XDG_CONFIG_HOME).
 QString configDir();
+// Copies the settings of versions before 1.0 (~/.config/potplayer-linux)
+// into configDir(), unless that already exists. Call once at startup.
+void migrateLegacyConfig();
 QString sessionFile();
 
 bool save(const State &state, const QString &path = sessionFile());

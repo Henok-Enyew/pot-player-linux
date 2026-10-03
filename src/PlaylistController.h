@@ -33,8 +33,12 @@ public:
 
     void addFilesDialog();
     void addFolderDialog();
-    // Queues the media files in `folder` and its subfolders. Returns how many.
-    int addFolder(const QString &folder);
+    // Queues the media files in `folder` and its subfolders. The folder is
+    // scanned in a worker thread; the files are queued when it is done.
+    void addFolder(const QString &folder);
+    // Queues `entries` at playlist index `row` (-1 appends), expanding
+    // folders in a worker thread first.
+    void addEntries(const QStringList &entries, int row = -1);
     void savePlaylistDialog();
     bool savePlaylist(const QString &path);
 
@@ -71,6 +75,8 @@ Q_SIGNALS:
 private:
     // Re-reads the playlist from mpv.
     void refresh();
+    // Rebuilds the drawer and probes new entries for the last reported playlist.
+    void updateDrawer();
     void applyOrder(const QList<int> &order);
     void scheduleSave();
     QList<double> durations() const;
@@ -85,6 +91,8 @@ private:
     // A duration sort waiting for the prober to finish.
     std::optional<std::pair<PlaylistOps::SortKey, bool>> m_pendingSort;
     QTimer m_durationTimer;
+    // Coalesces playlist reports, so a burst of changes rebuilds the drawer once.
+    QTimer m_playlistTimer;
     QTimer m_saveTimer;
     QTimer m_positionTimer;
     bool m_sessionStarted = false;

@@ -33,7 +33,7 @@ OpenSubtitlesClient::OpenSubtitlesClient(QObject *parent)
     , m_network(new QNetworkAccessManager(this))
     , m_baseUrl(QStringLiteral("https://api.opensubtitles.com/api/v1"))
 {
-    const QString override = qEnvironmentVariable("POTPLAYER_OPENSUBTITLES_URL");
+    const QString override = qEnvironmentVariable("TOPPLAYER_OPENSUBTITLES_URL");
     if (!override.isEmpty())
         m_baseUrl = QUrl(override);
 }

@@ -60,10 +60,11 @@ private:
     bool m_dragging = false;
     qreal m_hoverX = 0;
 
-    QColor m_grooveColor{0x3A, 0x3A, 0x3A};
-    QColor m_progressColor{0xFF, 0xB4, 0x1E};
-    QColor m_hoverColor{255, 255, 255, 60};
-    QColor m_handleColor{0xF0, 0xF0, 0xF0};
-    QColor m_chapterColor{0x14, 0x14, 0x14};
-    QColor m_clipColor{0x3F, 0xC1, 0xFF};
+    // Defaults; the skin sets these through the Q_PROPERTYs above.
+    QColor m_grooveColor{0x2A, 0x2D, 0x35};
+    QColor m_progressColor{0x00, 0xD2, 0xFF};
+    QColor m_hoverColor{0x33, 0xDC, 0xFF, 60};
+    QColor m_handleColor{0xFF, 0xFF, 0xFF};
+    QColor m_chapterColor{0x12, 0x13, 0x16};
+    QColor m_clipColor{0xA7, 0x8B, 0xFA};
 };

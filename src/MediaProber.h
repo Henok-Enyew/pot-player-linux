@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QStringList>
 #include <QTimer>
 
@@ -42,6 +43,8 @@ private:
     mpv_handle *m_mpv = nullptr;
     QHash<QString, double> m_durations; // includes failures, as -1
     QStringList m_queue;
+    // Entries in m_queue, for constant-time lookups in long playlists.
+    QSet<QString> m_queued;
     QString m_current;
     QTimer m_watchdog;
 };

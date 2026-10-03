@@ -20,7 +20,7 @@ class PodnapisiClient : public QObject
 public:
     explicit PodnapisiClient(QObject *parent = nullptr);
 
-    // https://www.podnapisi.net, or $POTPLAYER_PODNAPISI_URL.
+    // https://www.podnapisi.net, or $TOPPLAYER_PODNAPISI_URL.
     QUrl baseUrl() const { return m_baseUrl; }
     void setBaseUrl(const QUrl &url) { m_baseUrl = url; }
 

@@ -2,6 +2,7 @@
 #include "Icons.h"
 #include "MpvWidget.h"
 #include "SeekBar.h"
+#include "Theme.h"
 #include "TimeFormat.h"
 
 #include <QHBoxLayout>
@@ -147,7 +148,8 @@ void ControlBar::updatePlayButton()
 
 void ControlBar::updateTimeLabel()
 {
-    m_timeLabel->setText(QStringLiteral("<span style='color:#ffb41e'>%1</span>"
-                                        "<span style='color:#8a8a8a'> / %2</span>")
-                             .arg(formatTime(m_position), formatTime(m_duration)));
+    m_timeLabel->setText(QStringLiteral("<span style='color:%1'>%2</span>"
+                                        "<span style='color:%3'> / %4</span>")
+                             .arg(Theme::hex(Theme::Accent), formatTime(m_position),
+                                  Theme::hex(Theme::TextSecondary), formatTime(m_duration)));
 }

@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(PotPlayerLinux
-    VERSION 0.2.0
-    DESCRIPTION "A lightweight Qt6 + libmpv media player for Linux"
+project(top-player
+    VERSION 1.0.0
+    DESCRIPTION "Top Player: a lightweight Qt6 + libmpv media player for Linux"
     LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -17,7 +17,7 @@ endif()
 
 include(GNUInstallDirs)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Network OpenGL OpenGLWidgets)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Concurrent Gui Widgets Network OpenGL OpenGLWidgets)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
 # Unpacks the ZIP archives subtitle sites hand out.
@@ -30,13 +30,15 @@ set(_opensubtitles_key "$ENV{OPENSUBTITLES_API_KEY}")
 if(_opensubtitles_key STREQUAL "" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opensubtitles-api-key.txt")
     file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/opensubtitles-api-key.txt" _opensubtitles_key LIMIT_COUNT 1)
 endif()
-set(POTPLAYER_OPENSUBTITLES_API_KEY "${_opensubtitles_key}" CACHE STRING "Built-in OpenSubtitles.com API key")
+set(TOPPLAYER_OPENSUBTITLES_API_KEY "${_opensubtitles_key}" CACHE STRING "Built-in OpenSubtitles.com API key")
 
-option(POTPLAYER_BUILD_TESTS "Build the integration tests (need an X or Wayland display)" OFF)
+option(TOPPLAYER_BUILD_TESTS "Build the integration tests (need an X or Wayland display)" OFF)
 
 # Everything but main(), so the tests can drive the real window.
-add_library(pot-player-core OBJECT
+add_library(top-player-core OBJECT
     resources/skin.qrc
+    src/AboutDialog.cpp
+    src/AboutDialog.h
     src/ArtworkExtractor.cpp
     src/ArtworkExtractor.h
     src/AudioArtwork.cpp
@@ -119,20 +121,21 @@ add_library(pot-player-core OBJECT
     src/ZipArchive.h
 )
 
-target_include_directories(pot-player-core PUBLIC src)
+target_include_directories(top-player-core PUBLIC src)
 
-target_compile_definitions(pot-player-core PUBLIC
+target_compile_definitions(top-player-core PUBLIC
     APP_VERSION="${PROJECT_VERSION}"
-    POTPLAYER_OPENSUBTITLES_API_KEY="${POTPLAYER_OPENSUBTITLES_API_KEY}"
+    TOPPLAYER_OPENSUBTITLES_API_KEY="${TOPPLAYER_OPENSUBTITLES_API_KEY}"
     QT_NO_KEYWORDS
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(pot-player-core PUBLIC -Wall -Wextra -Wpedantic)
+    target_compile_options(top-player-core PUBLIC -Wall -Wextra -Wpedantic)
 endif()
 
-target_link_libraries(pot-player-core PUBLIC
+target_link_libraries(top-player-core PUBLIC
     Qt6::Core
+    Qt6::Concurrent
     Qt6::Gui
     Qt6::Widgets
     Qt6::Network
@@ -142,20 +145,20 @@ target_link_libraries(pot-player-core PUBLIC
     ZLIB::ZLIB
 )
 
-add_executable(pot-player src/main.cpp)
-target_link_libraries(pot-player PRIVATE pot-player-core)
+add_executable(top-player src/main.cpp)
+target_link_libraries(top-player PRIVATE top-player-core)
 
-if(POTPLAYER_BUILD_TESTS)
+if(TOPPLAYER_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-install(TARGETS pot-player RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES packaging/linux/org.github.potlinux.desktop
+install(TARGETS top-player RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES packaging/linux/org.github.topplayer.desktop
     DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES packaging/linux/org.github.potlinux.metainfo.xml
+install(FILES packaging/linux/org.github.topplayer.metainfo.xml
     DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
-install(FILES packaging/linux/org.github.potlinux.svg
+install(FILES packaging/linux/org.github.topplayer.svg
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 install(FILES LICENSE
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/pot-player)
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/top-player)

@@ -310,7 +310,7 @@ void ToolsTest::inOutMarkers()
 
     // The brackets and the band between them are drawn on the seekbar.
     const QImage image = seekBar->grab().toImage();
-    const QColor clipColor(0x3F, 0xC1, 0xFF);
+    const QColor clipColor = seekBar->property("clipColor").value<QColor>();
     auto columnHas = [&](int x, const std::function<bool(const QColor &)> &test) {
         for (int y = 0; y < image.height(); ++y) {
             if (test(image.pixelColor(x * image.width() / seekBar->width(), y)))

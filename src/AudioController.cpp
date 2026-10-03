@@ -12,11 +12,11 @@
 
 namespace {
 
-// mpv's own audio visualization filters, in the skin's amber.
+// mpv's own audio visualization filters, in the skin's cyan.
 const QString kWaveformFilter = QStringLiteral(
-    "showwaves=s=1280x720:r=30:mode=cline:scale=sqrt:draw=full:colors=0xFFB41E,format=yuv420p");
+    "showwaves=s=1280x720:r=30:mode=cline:scale=sqrt:draw=full:colors=0x00D2FF,format=yuv420p");
 const QString kSpectrumFilter = QStringLiteral(
-    "showfreqs=s=1280x720:rate=30:mode=bar:ascale=log:fscale=log:win_size=1024:averaging=4:colors=0xFFB41E,"
+    "showfreqs=s=1280x720:rate=30:mode=bar:ascale=log:fscale=log:win_size=1024:averaging=4:colors=0x00D2FF,"
     "format=yuv420p");
 
 QImage readImage(const QString &path)

@@ -1,6 +1,7 @@
 #include "SubtitleDownloadDialog.h"
 #include "MediaFiles.h"
 #include "SubtitleHasher.h"
+#include "Theme.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -30,7 +31,7 @@ constexpr int kResultRole = Qt::UserRole;
 constexpr int kSortRole = Qt::UserRole + 1;
 constexpr int kBadgeRole = Qt::UserRole + 2;
 
-const QColor kAmber(0xFF, 0xB4, 0x1E);
+const QColor kAccent = Theme::Accent;
 const QColor kErrorColor(0xFF, 0x6B, 0x5B);
 
 // Sorts numeric columns by value instead of text.
@@ -86,11 +87,11 @@ public:
         for (const QString &badge : badges) {
             const QRect pill(x, textRect.center().y() - height / 2 + 1, badgeMetrics.horizontalAdvance(badge) + 12, height);
             painter->setPen(Qt::NoPen);
-            // The match badges in amber; others (HI) in grey.
+            // The match badges in the accent color; others (HI) in grey.
             const bool match = badge != QLatin1String("HI");
-            painter->setBrush(match ? kAmber : QColor(0x5A, 0x5A, 0x5A));
+            painter->setBrush(match ? kAccent : Theme::TextDim);
             painter->drawRoundedRect(pill, height / 2.0, height / 2.0);
-            painter->setPen(match ? QColor(0x1A, 0x1A, 0x1A) : QColor(0xF0, 0xF0, 0xF0));
+            painter->setPen(match ? Theme::Surface : Theme::TextPrimary);
             painter->drawText(pill, Qt::AlignCenter, badge);
             x += pill.width() + 4;
         }

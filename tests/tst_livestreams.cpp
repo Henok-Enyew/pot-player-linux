@@ -142,7 +142,7 @@ void LiveStreamTest::cleanup()
     m_window = nullptr;
     QDir(StreamCatalog::cacheDir()).removeRecursively();
     QFile::remove(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-                  + QStringLiteral("/potplayer-linux/settings.ini"));
+                  + QStringLiteral("/top-player/settings.ini"));
 }
 
 LiveStreamDialog *LiveStreamTest::openDialog()

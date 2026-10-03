@@ -5,8 +5,8 @@
 #include <QString>
 
 // Folders and playlists kept in the player's library, saved in
-// ~/.config/potplayer-linux/library.json. Playlists saved from the queue are
-// written to ~/.config/potplayer-linux/playlists/ and belong to the library;
+// ~/.config/top-player/library.json. Playlists saved from the queue are
+// written to ~/.config/top-player/playlists/ and belong to the library;
 // other playlist files are only referenced.
 class MediaLibrary : public QObject
 {

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Builds Pot_Player-<version>-x86_64.AppImage with linuxdeploy and
+# Builds Top_Player-<version>-x86_64.AppImage with linuxdeploy and
 # linuxdeploy-plugin-qt. Run from the repository root:
 #
-#   VERSION=0.1.0 packaging/appimage/build-appimage.sh
+#   VERSION=1.0.0 packaging/appimage/build-appimage.sh
 #
 # Needs the same build dependencies as a normal build, plus qmake6
 # (so the Qt plugin can locate Qt) and, optionally, qt6-wayland.
@@ -57,11 +57,11 @@ export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
 cd "$WORK"
 linuxdeploy \
     --appdir "$APPDIR" \
-    --desktop-file "$APPDIR/usr/share/applications/org.github.potlinux.desktop" \
-    --icon-file "$ROOT/packaging/linux/org.github.potlinux.svg" \
+    --desktop-file "$APPDIR/usr/share/applications/org.github.topplayer.desktop" \
+    --icon-file "$ROOT/packaging/linux/org.github.topplayer.svg" \
     --plugin qt \
     --output appimage
 
 mkdir -p "$ROOT/dist"
-mv -f "$WORK"/Pot_Player-*.AppImage "$ROOT/dist/Pot_Player-${VERSION}-${ARCH}.AppImage"
-echo "Created dist/Pot_Player-${VERSION}-${ARCH}.AppImage"
+mv -f "$WORK"/Top_Player-*.AppImage "$ROOT/dist/Top_Player-${VERSION}-${ARCH}.AppImage"
+echo "Created dist/Top_Player-${VERSION}-${ARCH}.AppImage"

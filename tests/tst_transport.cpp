@@ -5,12 +5,16 @@
 #include "Icons.h"
 #include "MainWindow.h"
 #include "MpvWidget.h"
+#include "SeekBar.h"
+#include "ThumbnailGenerator.h"
 #include "TestClip.h"
 
 #include <QApplication>
+#include <QDialog>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
@@ -48,6 +52,10 @@ private Q_SLOTS:
     void volumeHotkeys();
     void pageUpPageDown();
     void playlistKeepsArrowKeys();
+    void clickTogglesPause();
+    void doubleClickTogglesFullScreen();
+    void aboutDialog();
+    void thumbnailsOnlyOnHover();
 
 private:
     QVariant prop(const char *name) const { return m_mpv->mpvProperty(QString::fromLatin1(name)); }
@@ -341,6 +349,104 @@ void TransportTest::playlistKeepsArrowKeys()
     QTRY_VERIFY(!view->hasFocus());
     press(Qt::Key_Down);
     QTRY_COMPARE(prop("volume").toDouble(), 50.0);
+}
+
+void TransportTest::clickTogglesPause()
+{
+    QVERIFY(!prop("pause").toBool());
+    QTest::mouseClick(m_mpv, Qt::LeftButton, Qt::NoModifier, m_mpv->rect().center());
+    // Not at once: the click could still become a double click.
+    QVERIFY(!prop("pause").toBool());
+    QTRY_VERIFY(prop("pause").toBool());
+    // QTest stamps events with its own clock: space the clicks so they stay single.
+    QTest::mouseClick(m_mpv, Qt::LeftButton, Qt::NoModifier, m_mpv->rect().center(),
+                      QApplication::doubleClickInterval() + 100);
+    QTRY_VERIFY(!prop("pause").toBool());
+}
+
+void TransportTest::doubleClickTogglesFullScreen()
+{
+    const QRect normalGeometry = m_window->geometry();
+
+    QTest::mouseDClick(m_mpv, Qt::LeftButton, Qt::NoModifier, m_mpv->rect().center());
+    QTRY_VERIFY(m_window->isFullScreen());
+    // The double click's first click must not pause.
+    QTest::qWait(QApplication::doubleClickInterval() + 300);
+    QVERIFY(!prop("pause").toBool());
+
+    QTest::mouseDClick(m_mpv, Qt::LeftButton, Qt::NoModifier, m_mpv->rect().center());
+    QTRY_VERIFY(!m_window->isFullScreen());
+    QTRY_COMPARE(m_window->geometry(), normalGeometry);
+    QTest::qWait(QApplication::doubleClickInterval() + 300);
+    QVERIFY(!prop("pause").toBool());
+
+    // Esc leaves fullscreen even while another widget has the keyboard.
+    m_window->toggleFullScreen();
+    QTRY_VERIFY(m_window->isFullScreen());
+    auto *view = m_window->findChild<QListWidget *>(QStringLiteral("PlaylistView"));
+    QVERIFY(view);
+    view->setFocus();
+    QTest::keyClick(view, Qt::Key_Escape);
+    QTRY_VERIFY(!m_window->isFullScreen());
+    QTRY_COMPARE(m_window->geometry(), normalGeometry);
+}
+
+void TransportTest::aboutDialog()
+{
+    press(Qt::Key_F1);
+    QDialog *about = nullptr;
+    QTRY_VERIFY((about = m_window->findChild<QDialog *>(QStringLiteral("AboutDialog"))) && about->isVisible());
+    QCOMPARE(about->windowTitle(), QStringLiteral("About Top Player"));
+
+    auto *title = about->findChild<QLabel *>(QStringLiteral("AboutTitle"));
+    QVERIFY(title);
+    QCOMPARE(title->accessibleName(), QStringLiteral("Top Player — Version " APP_VERSION));
+    auto *links = about->findChild<QLabel *>(QStringLiteral("AboutLinks"));
+    QVERIFY(links);
+    QVERIFY(links->openExternalLinks());
+    QVERIFY(links->text().contains(QStringLiteral("https://github.com/Henok-Enyew/pot-player-linux")));
+    QVERIFY(links->text().contains(QStringLiteral("https://t.me/enoch90s")));
+
+    auto *qt = about->findChild<QLabel *>(QStringLiteral("AboutQtVersion"));
+    QVERIFY(qt);
+    QCOMPARE(qt->text(), QString::fromLatin1(qVersion()));
+    auto *mpv = about->findChild<QLabel *>(QStringLiteral("AboutMpvVersion"));
+    QVERIFY(mpv);
+    QVERIFY2(mpv->text().startsWith(QStringLiteral("mpv ")), qPrintable(mpv->text()));
+    auto *hwdec = about->findChild<QLabel *>(QStringLiteral("AboutHwdec"));
+    QVERIFY(hwdec);
+    QVERIFY(!hwdec->text().isEmpty());
+
+    // F1 again doesn't stack a second dialog.
+    m_window->showAbout();
+    QCOMPARE(m_window->findChildren<QDialog *>(QStringLiteral("AboutDialog")).size(), 1);
+
+    if (const QString dir = qEnvironmentVariable("TOPPLAYER_SCREENSHOTS"); !dir.isEmpty())
+        about->grab().save(dir + QStringLiteral("/about.png"));
+    about->close();
+    QTRY_VERIFY(!m_window->findChild<QDialog *>(QStringLiteral("AboutDialog")));
+}
+
+void TransportTest::thumbnailsOnlyOnHover()
+{
+    auto *thumbnails = m_window->findChild<ThumbnailGenerator *>();
+    auto *seekBar = m_window->findChild<SeekBar *>();
+    QVERIFY(thumbnails && seekBar);
+    // The playing file is known, but nothing is decoded for previews yet.
+    QTRY_VERIFY(thumbnails->isAvailable());
+    QTest::qWait(300);
+    QVERIFY(!thumbnails->isOpen());
+
+    QSignalSpy ready(thumbnails, &ThumbnailGenerator::thumbnailReady);
+    QTest::mouseMove(seekBar, QPoint(seekBar->width() / 2, seekBar->height() / 2));
+    QTRY_VERIFY(thumbnails->isOpen());
+    QTRY_VERIFY_WITH_TIMEOUT(!ready.isEmpty(), 10000);
+    QVERIFY(!ready.first().at(1).value<QImage>().isNull());
+
+    // Stopping closes the preview decoder too.
+    m_mpv->stop();
+    QTRY_VERIFY(!thumbnails->isAvailable());
+    QVERIFY(!thumbnails->isOpen());
 }
 
 int main(int argc, char *argv[])

@@ -11,7 +11,7 @@ class MpvWidget;
 
 // Preamp, bass and treble, a 10-band graphic equalizer and loudness
 // normalization, applied through mpv's "af" property as one lavfi filter
-// graph, and kept in ~/.config/potplayer-linux/audio_settings.json.
+// graph, and kept in ~/.config/top-player/audio_settings.json.
 namespace AudioEffects {
 
 constexpr int kBandCount = 10;

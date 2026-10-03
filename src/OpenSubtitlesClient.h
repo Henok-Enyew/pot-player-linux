@@ -27,7 +27,7 @@ public:
 
     explicit OpenSubtitlesClient(QObject *parent = nullptr);
 
-    // https://api.opensubtitles.com/api/v1, or $POTPLAYER_OPENSUBTITLES_URL.
+    // https://api.opensubtitles.com/api/v1, or $TOPPLAYER_OPENSUBTITLES_URL.
     QUrl baseUrl() const { return m_baseUrl; }
     void setBaseUrl(const QUrl &url) { m_baseUrl = url; }
     void setApiKey(const QString &key) { m_apiKey = key; }
