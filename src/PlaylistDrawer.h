@@ -6,10 +6,14 @@
 #include <QListWidget>
 #include <QVariant>
 
+class LibraryPanel;
 class QLabel;
 class QLineEdit;
 class QMenu;
 class QPropertyAnimation;
+class QStackedWidget;
+class QTabBar;
+class QToolButton;
 
 // List view that turns drag-and-drop into playlist requests instead of moving
 // items itself; the list is rebuilt from mpv's playlist afterwards.
@@ -40,15 +44,25 @@ private:
     int dropRow(QDropEvent *event) const;
 };
 
-// Collapsible right-hand playlist panel mirroring mpv's "playlist" property,
-// with a search filter and the playlist management actions.
+// Collapsible right-hand panel with two pages: the playlist, mirroring mpv's
+// "playlist" property, with a search filter and the playlist management
+// actions; and the library of stored folders and playlists. Its left edge can
+// be dragged to resize it, and it can be expanded over most of the video.
 class PlaylistDrawer : public QFrame
 {
     Q_OBJECT
     Q_PROPERTY(int drawerWidth READ drawerWidth WRITE setDrawerWidth)
 
 public:
+    enum Page { PlaylistPage, LibraryPage };
+
+    // `parent` is the widget the drawer shares with the video; expanding it
+    // fills most of its width.
     explicit PlaylistDrawer(QWidget *parent = nullptr);
+
+    LibraryPanel *libraryPanel() const { return m_library; }
+    Page currentPage() const;
+    void setCurrentPage(Page page);
 
     // `durations` (seconds, negative if unknown) parallels `playlist` and may be empty.
     void setEntries(const QVariantList &playlist, const QList<double> &durations = {});
@@ -64,6 +78,16 @@ public:
 
     int drawerWidth() const { return width(); }
     void setDrawerWidth(int width);
+
+    // Expanded over the video, leaving only a strip of it visible.
+    bool isWide() const { return m_wide; }
+    void setWide(bool wide, bool animate = true);
+    // The width the drawer opens at when not wide, as last dragged by the
+    // user; remembered across runs if `save`. Leaves wide mode.
+    int preferredWidth() const { return m_preferredWidth; }
+    void setPreferredWidth(int width, bool save = true);
+    // The width the drawer has when wide, and the most it can be dragged to.
+    int maximumDrawerWidth() const;
 
 Q_SIGNALS:
     void playRequested(int index);
@@ -81,6 +105,7 @@ Q_SIGNALS:
     void openPlaylistRequested();
     void savePlaylistRequested();
     void expandedChanged(bool expanded);
+    void wideChanged(bool wide);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -92,6 +117,9 @@ private:
     void showContextMenu(const QPoint &pos);
     void applyFilter();
     void updateCount();
+    // The width the drawer should have while open.
+    int targetWidth() const;
+    void animateTo(int width);
 
     PlaylistView *m_view;
     QLineEdit *m_filter;
@@ -100,6 +128,12 @@ private:
     QMenu *m_moreMenu = nullptr;
     QAction *m_rememberAction = nullptr;
     QAction *m_resumeAction = nullptr;
+    QTabBar *m_tabs;
+    QStackedWidget *m_pages;
+    LibraryPanel *m_library;
+    QToolButton *m_wideButton = nullptr;
     QPropertyAnimation *m_animation;
+    int m_preferredWidth;
     bool m_expanded = false;
+    bool m_wide = false;
 };

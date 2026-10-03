@@ -30,6 +30,7 @@
 #include <QMouseEvent>
 #include <QScreen>
 #include <QStandardPaths>
+#include <QTreeView>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWindow>
@@ -50,12 +51,16 @@ constexpr int kIdleHideMs = 2000;
 constexpr int kPopupGap = 6;
 
 // Keys that a focused list keeps for its own navigation instead of letting the
-// player's shortcuts (volume, fullscreen) take them.
-bool isListNavigationKey(const QKeyEvent *event)
+// player's shortcuts (volume, fullscreen) take them. A tree also keeps Left and
+// Right, which open and close its folders, instead of seeking.
+bool isListNavigationKey(const QKeyEvent *event, bool tree)
 {
     if (event->modifiers() & ~(Qt::ShiftModifier | Qt::KeypadModifier))
         return false;
     switch (event->key()) {
+    case Qt::Key_Left:
+    case Qt::Key_Right:
+        return tree;
     case Qt::Key_Up:
     case Qt::Key_Down:
     case Qt::Key_Home:
@@ -503,7 +508,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     // selection instead of changing the volume.
     if (event->type() == QEvent::ShortcutOverride && qobject_cast<QAbstractItemView *>(watched)
         && static_cast<QWidget *>(watched)->window() == this
-        && isListNavigationKey(static_cast<QKeyEvent *>(event))) {
+        && isListNavigationKey(static_cast<QKeyEvent *>(event), qobject_cast<QTreeView *>(watched))) {
         event->accept();
         return true;
     }

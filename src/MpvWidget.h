@@ -22,6 +22,8 @@ public:
     void loadFile(const QString &pathOrUrl, const QStringList &subtitles = {});
     // Replaces the playlist: plays the first file and queues the rest.
     void loadFiles(const QStringList &files, const QStringList &subtitles = {});
+    // Replaces the playlist with `files` and plays entry `start`.
+    void playFiles(const QStringList &files, int start);
     // Replaces the playlist with the entries of a playlist file (.m3u, .pls, ...).
     void loadPlaylist(const QString &path);
     // Replaces the playlist with `files` without starting playback; Play

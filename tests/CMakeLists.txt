@@ -19,3 +19,7 @@ add_test(NAME tst_audio COMMAND tst_audio)
 add_executable(tst_subtitles tst_subtitles.cpp)
 target_link_libraries(tst_subtitles PRIVATE pot-player-core Qt6::Test)
 add_test(NAME tst_subtitles COMMAND tst_subtitles)
+
+add_executable(tst_library tst_library.cpp)
+target_link_libraries(tst_library PRIVATE pot-player-core Qt6::Test)
+add_test(NAME tst_library COMMAND tst_library)

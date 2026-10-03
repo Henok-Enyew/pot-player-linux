@@ -49,10 +49,14 @@ add_library(pot-player-core OBJECT
     src/EmptyStateWidget.h
     src/Icons.cpp
     src/Icons.h
+    src/LibraryPanel.cpp
+    src/LibraryPanel.h
     src/MainWindow.cpp
     src/MainWindow.h
     src/MediaFiles.cpp
     src/MediaFiles.h
+    src/MediaLibrary.cpp
+    src/MediaLibrary.h
     src/MediaProber.cpp
     src/MediaProber.h
     src/MpvHelpers.h

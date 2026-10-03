@@ -120,4 +120,14 @@ void setResumePlayback(bool enabled)
     setBoolSetting(QStringLiteral("playlist/resume"), enabled);
 }
 
+int drawerWidth(int defaultWidth)
+{
+    return QSettings(settingsFile(), QSettings::IniFormat).value(QStringLiteral("playlist/width"), defaultWidth).toInt();
+}
+
+void setDrawerWidth(int width)
+{
+    QSettings(settingsFile(), QSettings::IniFormat).setValue(QStringLiteral("playlist/width"), width);
+}
+
 } // namespace PlaylistSession

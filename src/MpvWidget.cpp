@@ -139,6 +139,22 @@ void MpvWidget::loadFiles(const QStringList &files, const QStringList &subtitles
         command(cmd);
 }
 
+void MpvWidget::playFiles(const QStringList &files, int start)
+{
+    if (start <= 0) {
+        loadFiles(files);
+        return;
+    }
+    m_pendingSubtitles.clear();
+    // Queue everything first, so the entries before `start` never begin playing.
+    QList<QStringList> commands{{QStringLiteral("stop")}};
+    for (const QString &file : files)
+        commands.append({QStringLiteral("loadfile"), file, QStringLiteral("append")});
+    start = std::min(start, static_cast<int>(files.size()) - 1);
+    commands.append({QStringLiteral("playlist-play-index"), QString::number(start)});
+    runOrDefer(commands);
+}
+
 void MpvWidget::loadPlaylist(const QString &path)
 {
     m_pendingSubtitles.clear();

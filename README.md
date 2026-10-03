@@ -110,6 +110,25 @@ on top of Qt's Fusion style with a matching dark palette:
     start without files on the command line, reopening the last entry
     paused where it was left.
 
+  - **Resizable and expandable:** drag the drawer's left edge to make it
+    wider or narrower (the width is remembered), or click the expand button
+    in its header (or double-click the edge) to spread it over the video,
+    leaving a strip of the picture visible; click again to restore it.
+- **Library** (the drawer's second tab) keeps folders and playlists in the
+  player, saved in `~/.config/potplayer-linux/library.json`:
+  - **Add Folder to Library...** stores a folder; expand it to browse its
+    subfolders and media files. Double-click a folder to play all of it, or
+    a file to play its folder from that file on.
+  - **Save Current Playlist to Library...** stores the queue as a named
+    playlist (`~/.config/potplayer-linux/playlists/<name>.m3u8`), and **Add
+    Playlist File to Library...** references an existing `.m3u`/`.m3u8`/`.pls`.
+    Expand a playlist to see its entries and double-click one to play the
+    playlist from there.
+  - Right-click for **Add to Playlist**, **Rename...**, **Replace with Current
+    Playlist**, **Refresh** and **Remove from Library** (**Delete Playlist**
+    for playlists saved to the library, after confirming). Items can be
+    dragged onto the video or the playlist.
+
 In fullscreen the title bar, drawer and control bar are hidden; moving the
 pointer to the bottom edge reveals the control bar, and the controls and
 cursor hide again after two seconds without movement.
