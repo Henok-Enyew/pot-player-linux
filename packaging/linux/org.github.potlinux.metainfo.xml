@@ -13,8 +13,10 @@
     <ul>
       <li>Borderless dark skin with an on-screen display</li>
       <li>Seekbar with hover preview thumbnails</li>
-      <li>Drag-and-drop playlist drawer</li>
+      <li>Playlist manager: folders, sorting, shuffle, search, M3U, session restore</li>
+      <li>Audio view with album art, metadata and visualizations</li>
       <li>Dual subtitles, subtitle delay and position hotkeys</li>
+      <li>Subtitle search and download from OpenSubtitles.com</li>
       <li>Hardware-accelerated decoding through mpv</li>
     </ul>
   </description>
@@ -29,6 +31,16 @@
   </developer>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.0" date="2026-10-03">
+      <description>
+        <ul>
+          <li>Subtitle search and download from OpenSubtitles.com, with movie hash matching</li>
+          <li>Audio files show their cover art and metadata, or a waveform or spectrum visualization</li>
+          <li>Playlist manager: add folders, sort, shuffle, remove missing files and duplicates, search, save and open M3U playlists, restore the last session</li>
+          <li>Fix turning subtitles off from the Subtitle Track menu</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-02"/>
   </releases>
 </component>

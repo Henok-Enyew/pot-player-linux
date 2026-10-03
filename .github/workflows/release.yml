@@ -61,6 +61,8 @@ jobs:
       - name: Build AppImage
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          # Optional built-in OpenSubtitles.com key; users can always enter their own.
+          OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
         run: packaging/appimage/build-appimage.sh
 
       - uses: actions/upload-artifact@v4
@@ -83,6 +85,7 @@ jobs:
       - name: Build RPM
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           # RPM versions cannot contain '-'.
@@ -113,6 +116,15 @@ jobs:
       options: --privileged
     steps:
       - uses: actions/checkout@v4
+
+      # flatpak-builder doesn't pass the environment on; CMake reads this file instead.
+      - name: Add OpenSubtitles API key
+        env:
+          OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
+        run: |
+          if [ -n "$OPENSUBTITLES_API_KEY" ]; then
+            printf '%s\n' "$OPENSUBTITLES_API_KEY" > opensubtitles-api-key.txt
+          fi
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:

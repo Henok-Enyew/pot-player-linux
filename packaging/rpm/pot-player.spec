@@ -1,10 +1,10 @@
 # Built in CI by .github/workflows/release.yml, which replaces Version with
 # the release tag. Local build from a checkout:
 #
-#   git archive --prefix=pot-player-0.1.0/ -o ~/rpmbuild/SOURCES/pot-player-0.1.0.tar.gz HEAD
+#   git archive --prefix=pot-player-0.2.0/ -o ~/rpmbuild/SOURCES/pot-player-0.2.0.tar.gz HEAD
 #   rpmbuild -ba packaging/rpm/pot-player.spec
 Name:           pot-player
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Lightweight media player with a PotPlayer-style interface
 
@@ -19,6 +19,7 @@ BuildRequires:  pkgconfig(mpv)
 BuildRequires:  cmake(Qt6Core)
 BuildRequires:  cmake(Qt6Gui)
 BuildRequires:  cmake(Qt6Widgets)
+BuildRequires:  cmake(Qt6Network)
 BuildRequires:  cmake(Qt6OpenGL)
 BuildRequires:  cmake(Qt6OpenGLWidgets)
 BuildRequires:  pkgconfig(gl)
@@ -31,7 +32,8 @@ Requires:       hicolor-icon-theme
 Pot Player is a Qt6 media player for Linux built on libmpv. It brings the
 look and keyboard workflow of PotPlayer to the Linux desktop: a borderless
 dark skin with an on-screen display, a seekbar with preview thumbnails, a
-drag-and-drop playlist drawer and dual subtitle support.
+playlist manager, an audio view with cover art and visualizations, dual
+subtitles and subtitle downloads from OpenSubtitles.com.
 
 %prep
 %autosetup -n %{name}-%{version}
@@ -58,5 +60,10 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/org.github.potlinux.m
 %{_datadir}/icons/hicolor/scalable/apps/org.github.potlinux.svg
 
 %changelog
+* Sat Oct 03 2026 pot-player-linux contributors - 0.2.0-1
+- Subtitle search and download from OpenSubtitles.com
+- Audio view with cover art, metadata and visualizations
+- Playlist manager with folders, sorting, M3U and session restore
+
 * Fri Oct 02 2026 pot-player-linux contributors - 0.1.0-1
 - Initial package
