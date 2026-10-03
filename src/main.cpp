@@ -31,7 +31,9 @@ int main(int argc, char *argv[])
     window.resize(960, 540);
     window.show();
 
+    // Files on the command line replace the queue from the last run.
     const QStringList args = parser.positionalArguments();
+    window.startSession(args.isEmpty());
     if (!args.isEmpty())
         window.openFiles(args);
 

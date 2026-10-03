@@ -1,4 +1,5 @@
 #include "PlayerMenu.h"
+#include "AudioController.h"
 #include "MainWindow.h"
 #include "MpvWidget.h"
 
@@ -103,6 +104,43 @@ void PlayerMenu::buildAudioMenu()
     addCommand(audio, tr("Audio Delay -0.1s"), {QStringLiteral("add"), QStringLiteral("audio-delay"), QStringLiteral("-0.1")},
                QKeySequence(Qt::CTRL | Qt::Key_Comma));
     addCommand(audio, tr("Reset Audio Delay"), {QStringLiteral("set"), QStringLiteral("audio-delay"), QStringLiteral("0")});
+    audio->addSeparator();
+    buildVisualizationMenu(audio);
+}
+
+void PlayerMenu::buildVisualizationMenu(QMenu *audio)
+{
+    using AudioArtwork::Visualization;
+    AudioController *controller = m_window->audio();
+    QMenu *visualizations = audio->addMenu(tr("Visualizations"));
+    visualizations->setObjectName(QStringLiteral("VisualizationMenu"));
+    auto *group = new QActionGroup(visualizations);
+    const QList<QPair<QString, Visualization>> modes{
+        {tr("Album Art Mode"), Visualization::AlbumArt},
+        {tr("Waveform Visualizer"), Visualization::Waveform},
+        {tr("Frequency Spectrum"), Visualization::Spectrum},
+        {tr("Off (Minimal Canvas)"), Visualization::Off},
+    };
+    for (const auto &[text, mode] : modes) {
+        QAction *action = visualizations->addAction(text);
+        action->setCheckable(true);
+        group->addAction(action);
+        connect(action, &QAction::triggered, this, [this, controller, text, mode] {
+            controller->setVisualization(mode);
+            Q_EMIT osdRequested(tr("Visualization"), text);
+        });
+        connect(visualizations, &QMenu::aboutToShow, action,
+                [action, controller, mode] { action->setChecked(controller->visualization() == mode); });
+    }
+
+    QAction *setArtwork = audio->addAction(tr("Set Custom Audio Artwork..."));
+    connect(setArtwork, &QAction::triggered, controller, &AudioController::setCustomArtworkDialog);
+    QAction *clearArtwork = audio->addAction(tr("Clear Custom Audio Artwork"));
+    connect(clearArtwork, &QAction::triggered, controller, &AudioController::clearCustomArtwork);
+    connect(audio, &QMenu::aboutToShow, this, [controller, setArtwork, clearArtwork] {
+        setArtwork->setEnabled(controller->isActive());
+        clearArtwork->setEnabled(controller->hasCustomArtwork());
+    });
 }
 
 void PlayerMenu::buildSubtitleMenu()
@@ -162,6 +200,7 @@ void PlayerMenu::buildPlaybackMenu()
     addItem(this, tr("Open Folder..."), [this] { m_window->openFolderDialog(); });
     addItem(this, tr("Open URL / Stream..."), [this] { m_window->openUrlDialog(); });
     addItem(this, tr("Open Playlist..."), [this] { m_window->openPlaylistDialog(); });
+    addItem(this, tr("Save Playlist..."), [this] { m_window->savePlaylistDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_S));
     addSeparator();
 
     QMenu *playback = addMenu(tr("Playback"));
@@ -305,7 +344,9 @@ QMenu *PlayerMenu::addTrackMenu(QMenu *menu, const QString &title, const QString
         auto *group = new QActionGroup(submenu);
         // Compare against the property itself: a track's "selected" flag is also set
         // when it is shown as the secondary subtitle.
-        const QString current = m_mpv->mpvPropertyString(property);
+        // An audio visualization takes over audio track selection from mpv's "aid".
+        const bool audio = property == QLatin1String("aid");
+        const QString current = audio ? m_window->audio()->audioTrack() : m_mpv->mpvPropertyString(property);
         // mpv refuses to show one subtitle track as both primary and secondary.
         const QString taken = otherSubtitleSlot(property);
 
@@ -315,8 +356,11 @@ QMenu *PlayerMenu::addTrackMenu(QMenu *menu, const QString &title, const QString
             action->setChecked(value == current);
             action->setEnabled(value != taken);
             group->addAction(action);
-            connect(action, &QAction::triggered, this, [this, title, property, label, value] {
-                m_mpv->setMpvProperty(property, value);
+            connect(action, &QAction::triggered, this, [this, title, property, label, value, audio] {
+                if (audio)
+                    m_window->audio()->selectAudioTrack(value);
+                else
+                    m_mpv->setMpvProperty(property, value);
                 Q_EMIT osdRequested(title, label);
             });
         };

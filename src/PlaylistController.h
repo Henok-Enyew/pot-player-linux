@@ -1,0 +1,77 @@
+#pragma once
+
+#include "PlaylistOps.h"
+
+#include <QObject>
+#include <QTimer>
+#include <QVariant>
+
+#include <optional>
+#include <utility>
+
+class MediaProber;
+class MpvWidget;
+class PlaylistDrawer;
+class QWidget;
+
+// Carries out the playlist drawer's requests on mpv's playlist, which stays
+// the single source of truth: reordering is done with playlist-move commands
+// (like drag-and-drop), so the playing entry keeps playing. Also keeps the
+// queue saved between runs.
+class PlaylistController : public QObject
+{
+    Q_OBJECT
+
+public:
+    PlaylistController(MpvWidget *mpv, PlaylistDrawer *drawer, QWidget *dialogParent);
+
+    // Mirrors a report of mpv's "playlist" property.
+    void setPlaylist(const QVariantList &playlist);
+
+    void addFilesDialog();
+    void addFolderDialog();
+    // Queues the media files in `folder` and its subfolders. Returns how many.
+    int addFolder(const QString &folder);
+    void savePlaylistDialog();
+    bool savePlaylist(const QString &path);
+
+    void sort(PlaylistOps::SortKey key, bool ascending);
+    void reverse();
+    void shuffle();
+    void removeRows(QList<int> rows);
+    void clear();
+    void removeMissing();
+    void removeDuplicates();
+
+    // Starts saving the queue (when enabled) and, if `restore`, reopens the
+    // saved one. Returns true if a queue was restored.
+    bool startSession(bool restore);
+    // Saves the queue now, if enabled and the session has started.
+    void saveSession();
+
+    // mpv's current playlist, with durations (where known) and file sizes.
+    QList<PlaylistOps::Entry> entries();
+
+Q_SIGNALS:
+    void message(const QString &label, const QString &value = QString());
+
+private:
+    // Re-reads the playlist from mpv.
+    void refresh();
+    void applyOrder(const QList<int> &order);
+    void scheduleSave();
+    QList<double> durations() const;
+
+    MpvWidget *m_mpv;
+    PlaylistDrawer *m_drawer;
+    QWidget *m_dialogParent;
+    MediaProber *m_prober;
+    QVariantList m_playlist;
+    QList<PlaylistOps::Entry> m_entries;
+    // A duration sort waiting for the prober to finish.
+    std::optional<std::pair<PlaylistOps::SortKey, bool>> m_pendingSort;
+    QTimer m_durationTimer;
+    QTimer m_saveTimer;
+    QTimer m_positionTimer;
+    bool m_sessionStarted = false;
+};

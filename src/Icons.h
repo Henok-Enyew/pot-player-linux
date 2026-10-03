@@ -6,7 +6,7 @@
 // Flat skin icons drawn with QPainter, so the skin needs no image plugins.
 enum class IconType {
     Open, Play, Pause, Stop, Previous, Next, Playlist, Volume, Muted, Fullscreen,
-    Minimize, Maximize, Restore, Close, Add, Remove, Clear, Folder, Url,
+    Minimize, Maximize, Restore, Close, Add, Remove, Clear, Folder, Url, Shuffle, Sort, More, Search,
 };
 
 QIcon skinIcon(IconType type);

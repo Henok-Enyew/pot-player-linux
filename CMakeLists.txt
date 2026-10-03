@@ -26,6 +26,14 @@ option(POTPLAYER_BUILD_TESTS "Build the integration tests (need an X or Wayland 
 # Everything but main(), so the tests can drive the real window.
 add_library(pot-player-core OBJECT
     resources/skin.qrc
+    src/ArtworkExtractor.cpp
+    src/ArtworkExtractor.h
+    src/AudioArtwork.cpp
+    src/AudioArtwork.h
+    src/AudioController.cpp
+    src/AudioController.h
+    src/AudioView.cpp
+    src/AudioView.h
     src/ControlBar.cpp
     src/ControlBar.h
     src/EmptyStateWidget.cpp
@@ -36,6 +44,8 @@ add_library(pot-player-core OBJECT
     src/MainWindow.h
     src/MediaFiles.cpp
     src/MediaFiles.h
+    src/MediaProber.cpp
+    src/MediaProber.h
     src/MpvHelpers.h
     src/MpvWidget.cpp
     src/MpvWidget.h
@@ -43,8 +53,14 @@ add_library(pot-player-core OBJECT
     src/OsdWidget.h
     src/PlayerMenu.cpp
     src/PlayerMenu.h
+    src/PlaylistController.cpp
+    src/PlaylistController.h
     src/PlaylistDrawer.cpp
     src/PlaylistDrawer.h
+    src/PlaylistOps.cpp
+    src/PlaylistOps.h
+    src/PlaylistSession.cpp
+    src/PlaylistSession.h
     src/SeekBar.cpp
     src/SeekBar.h
     src/Theme.cpp

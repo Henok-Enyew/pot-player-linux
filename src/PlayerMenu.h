@@ -37,6 +37,8 @@ private:
 
     void buildVideoMenu();
     void buildAudioMenu();
+    // Audio -> Visualizations, and the custom artwork items.
+    void buildVisualizationMenu(QMenu *audio);
     void buildSubtitleMenu();
     void buildPlaybackMenu();
     void buildWindowMenu();

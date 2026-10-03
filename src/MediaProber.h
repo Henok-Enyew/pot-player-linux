@@ -1,0 +1,47 @@
+#pragma once
+
+#include <QHash>
+#include <QObject>
+#include <QStringList>
+#include <QTimer>
+
+struct mpv_handle;
+
+// Reads the durations of local media files, one at a time, with a second,
+// headless libmpv instance that opens each file without decoding it.
+class MediaProber : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit MediaProber(QObject *parent = nullptr);
+    ~MediaProber() override;
+
+    // Queues the local files among `entries` (paths or URLs) that were not probed yet.
+    void probe(const QStringList &entries);
+    // Records a duration known from elsewhere (e.g. the saved session).
+    void setDuration(const QString &entry, double seconds);
+    // Seconds, or a negative value if unknown (not probed yet, or unreadable).
+    double duration(const QString &entry) const;
+    bool hasResult(const QString &entry) const { return m_durations.contains(entry); }
+    bool isBusy() const { return !m_current.isEmpty() || !m_queue.isEmpty(); }
+
+Q_SIGNALS:
+    void durationKnown(const QString &entry, double seconds);
+    // The queue ran empty.
+    void finished();
+
+private Q_SLOTS:
+    void processEvents();
+
+private:
+    static void onWakeup(void *ctx);
+    void startNext();
+    void finishCurrent(double seconds);
+
+    mpv_handle *m_mpv = nullptr;
+    QHash<QString, double> m_durations; // includes failures, as -1
+    QStringList m_queue;
+    QString m_current;
+    QTimer m_watchdog;
+};

@@ -183,6 +183,25 @@ QSlider#VolumeSlider::handle:horizontal:hover {
     color: #8a8a8a;
 }
 
+QLineEdit#PlaylistFilter {
+    background: #222222;
+    color: #d6d6d6;
+    border: 1px solid #2f2f2f;
+    border-radius: 3px;
+    padding: 2px 4px;
+    selection-background-color: #ffb41e;
+    selection-color: #111111;
+}
+
+QLineEdit#PlaylistFilter:focus {
+    border-color: #ffb41e;
+}
+
+#PlaylistDrawer QToolButton[hideMenuIndicator="true"]::menu-indicator {
+    image: none;
+    width: 0;
+}
+
 QListWidget#PlaylistView {
     background: #181818;
     color: #c8c8c8;

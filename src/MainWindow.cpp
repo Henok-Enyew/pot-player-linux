@@ -1,10 +1,12 @@
 #include "MainWindow.h"
+#include "AudioController.h"
 #include "ControlBar.h"
 #include "EmptyStateWidget.h"
 #include "MediaFiles.h"
 #include "MpvWidget.h"
 #include "OsdWidget.h"
 #include "PlayerMenu.h"
+#include "PlaylistController.h"
 #include "PlaylistDrawer.h"
 #include "SeekBar.h"
 #include "ThumbnailGenerator.h"
@@ -14,6 +16,7 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QClipboard>
+#include <QCloseEvent>
 #include <QContextMenuEvent>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -103,7 +106,9 @@ MainWindow::MainWindow(QWidget *parent)
     layout->addWidget(m_controlBar);
     setCentralWidget(m_root);
 
-    // Created before the OSD so that OSD messages draw on top of it.
+    // Stacked over the video in creation order: the audio view, then the start
+    // screen, then the OSD on top.
+    m_audio = new AudioController(m_mpv, this);
     m_emptyState = new EmptyStateWidget(m_mpv);
     m_osd = new OsdWidget(m_mpv);
     m_menu = new PlayerMenu(m_mpv, this);
@@ -125,6 +130,8 @@ MainWindow::MainWindow(QWidget *parent)
         if (!isFullScreen() && !isMaximized())
             resizeToVideo(size, 1.0);
     });
+    connect(m_audio, &AudioController::message, m_osd,
+            [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
     connect(m_menu, &PlayerMenu::osdRequested, m_osd,
             [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
     connect(m_controlBar, &ControlBar::openRequested, this, &MainWindow::openFileDialog);
@@ -157,27 +164,10 @@ MainWindow::MainWindow(QWidget *parent)
 
 void MainWindow::setupPlaylist()
 {
-    connect(m_drawer, &PlaylistDrawer::playRequested, this, [this](int index) {
-        m_mpv->command({QStringLiteral("playlist-play-index"), QString::number(index)});
-    });
-    connect(m_drawer, &PlaylistDrawer::moveRequested, this, [this](int from, int to) {
-        m_mpv->command({QStringLiteral("playlist-move"), QString::number(from), QString::number(to)});
-    });
-    connect(m_drawer, &PlaylistDrawer::removeRequested, this, [this](QList<int> rows) {
-        // Remove from the bottom up so earlier indexes stay valid.
-        std::sort(rows.begin(), rows.end(), std::greater<>());
-        for (int row : std::as_const(rows))
-            m_mpv->command({QStringLiteral("playlist-remove"), QString::number(row)});
-    });
-    connect(m_drawer, &PlaylistDrawer::filesDropped, this,
-            [this](const QStringList &files, int row) { m_mpv->insertFiles(files, row); });
-    connect(m_drawer, &PlaylistDrawer::addRequested, this, [this] {
-        const QStringList files = QFileDialog::getOpenFileNames(this, tr("Add to Playlist"));
-        if (!files.isEmpty())
-            m_mpv->insertFiles(files);
-    });
-    connect(m_drawer, &PlaylistDrawer::clearRequested, this,
-            [this] { m_mpv->command({QStringLiteral("playlist-clear")}); });
+    m_playlist = new PlaylistController(m_mpv, m_drawer, this);
+    connect(m_playlist, &PlaylistController::message, m_osd,
+            [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
+    connect(m_drawer, &PlaylistDrawer::openPlaylistRequested, this, &MainWindow::openPlaylistDialog);
     connect(m_drawer, &PlaylistDrawer::expandedChanged, m_controlBar, &ControlBar::setPlaylistChecked);
     connect(m_drawer, &PlaylistDrawer::expandedChanged, this, [this](bool expanded) {
         // Don't leave the keyboard on a list that is going away.
@@ -206,6 +196,11 @@ void MainWindow::setupThumbnails()
         m_hoverSecond = -1;
         m_thumbnailPopup->hide();
     });
+    // An audio file's "video" is its cover or a visualization: no previews.
+    connect(m_mpv, &MpvWidget::fileLoaded, this, [this] {
+        if (m_mpv->isAudioOnly())
+            m_thumbnails->setFile({});
+    });
     connect(m_thumbnails, &ThumbnailGenerator::thumbnailReady, this, [this](int second, const QImage &image) {
         // Keep showing the previous frame until the one under the pointer arrives.
         if (m_hoverSecond < 0 || !m_thumbnailPopup->isVisible() || second != m_hoverSecond)
@@ -223,7 +218,7 @@ void MainWindow::onStateUpdated(const QString &name, const QVariant &value)
         if (value.toBool() && m_mpv->isIdle())
             m_emptyState->setActive(true);
     } else if (name == QLatin1String("playlist")) {
-        m_drawer->setEntries(value.toList());
+        m_playlist->setPlaylist(value.toList());
     } else if (name == QLatin1String("path")) {
         // Previews come from a second decoder, so only local files are worth it.
         const QString path = value.toString();
@@ -295,6 +290,16 @@ void MainWindow::openPlaylistDialog()
     const QString file = QFileDialog::getOpenFileName(this, tr("Open Playlist"), {}, MediaFiles::playlistFileFilter());
     if (!file.isEmpty())
         m_mpv->loadPlaylist(file);
+}
+
+void MainWindow::savePlaylistDialog()
+{
+    m_playlist->savePlaylistDialog();
+}
+
+bool MainWindow::startSession(bool restore)
+{
+    return m_playlist->startSession(restore);
 }
 
 void MainWindow::openUrls(const QList<QUrl> &urls)
@@ -435,6 +440,12 @@ void MainWindow::changeEvent(QEvent *event)
     QMainWindow::changeEvent(event);
     if (event->type() == QEvent::WindowStateChange)
         updateChrome();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    m_playlist->saveSession();
+    QMainWindow::closeEvent(event);
 }
 
 void MainWindow::updateChrome()
