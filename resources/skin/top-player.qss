@@ -102,6 +102,8 @@ SeekBar {
     qproperty-hoverColor: rgba(51, 220, 255, 60);
     qproperty-handleColor: #ffffff;
     qproperty-chapterColor: #121316;
+    /* The media cutter's clip, set apart from the cyan progress. */
+    qproperty-clipColor: #a78bfa;
     min-height: 18px;
 }
 
@@ -284,9 +286,30 @@ QSlider::handle:vertical:hover {
     border-left: 1px solid #2a2d35;
 }
 
-#PlaylistTitle {
-    color: #ffffff;
+#PlaylistResizeHandle {
+    background: transparent;
+}
+
+#PlaylistResizeHandle:hover {
+    background: rgba(0, 210, 255, 0.35);
+}
+
+QTabBar#PlaylistTabs::tab {
+    background: transparent;
+    color: #a0a5b5;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 4px 8px;
     font-weight: bold;
+}
+
+QTabBar#PlaylistTabs::tab:hover {
+    color: #ffffff;
+}
+
+QTabBar#PlaylistTabs::tab:selected {
+    color: #ffffff;
+    border-bottom-color: #00d2ff;
 }
 
 #PlaylistCount {
@@ -322,6 +345,29 @@ QListWidget#PlaylistView::item:hover {
 }
 
 QListWidget#PlaylistView::item:selected {
+    background: #10303a;
+    color: #ffffff;
+}
+
+QTreeWidget#LibraryView {
+    background: #1a1c22;
+    color: #d8dbe4;
+    border: none;
+    border-top: 1px solid #2a2d35;
+    outline: none;
+    padding: 2px 0;
+}
+
+QTreeWidget#LibraryView::item {
+    padding: 4px 2px;
+    border: none;
+}
+
+QTreeWidget#LibraryView::item:hover {
+    background: #22252c;
+}
+
+QTreeWidget#LibraryView::item:selected {
     background: #10303a;
     color: #ffffff;
 }

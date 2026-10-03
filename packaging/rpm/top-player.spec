@@ -24,6 +24,7 @@ BuildRequires:  cmake(Qt6Network)
 BuildRequires:  cmake(Qt6OpenGL)
 BuildRequires:  cmake(Qt6OpenGLWidgets)
 BuildRequires:  pkgconfig(gl)
+BuildRequires:  pkgconfig(zlib)
 BuildRequires:  desktop-file-utils
 BuildRequires:  /usr/bin/appstreamcli
 

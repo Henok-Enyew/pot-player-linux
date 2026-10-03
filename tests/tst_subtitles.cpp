@@ -1,14 +1,17 @@
-// Subtitles: showing and hiding them, and the OpenSubtitles search and
-// download dialog, run against a local mock of the OpenSubtitles REST API.
+// Subtitles: showing and hiding them, and the download dialog, run against a
+// local mock of podnapisi.net and the OpenSubtitles REST API.
 // Needs a display (run under xvfb-run) and ffmpeg, which generates the test clip.
 
 #include "MainWindow.h"
 #include "MpvWidget.h"
 #include "OpenSubtitlesClient.h"
 #include "OsdWidget.h"
+#include "PodnapisiClient.h"
 #include "PlayerMenu.h"
 #include "SubtitleDownloadDialog.h"
+#include "SubtitleHasher.h"
 #include "SubtitleSearch.h"
+#include "ZipArchive.h"
 #include "TestClip.h"
 
 #include <QApplication>
@@ -32,6 +35,9 @@
 #include <QTimer>
 #include <QTreeWidget>
 #include <QUrlQuery>
+#include <QtEndian>
+
+#include <zlib.h>
 
 #include <clocale>
 #include <functional>
@@ -138,6 +144,65 @@ QJsonObject result(int fileId, const QString &language, const QString &fileName,
     };
 }
 
+// A podnapisi.net search result, as its XML search returns it.
+QByteArray podnapisiSubtitle(const QString &pid, const QString &title, int year, const QString &release,
+                             const QString &language, double rating, const QString &flags = {})
+{
+    return QStringLiteral("<subtitle><pid>%1</pid><title>%2</title><year>%3</year>"
+                          "<url>http://www.podnapisi.net/subtitles/%1</url><release>%4</release>"
+                          "<language>%5</language><rating>%6</rating><flags>%7</flags>"
+                          "<downloads>120</downloads><format>SubRip</format><uploaderName>tester</uploaderName></subtitle>")
+        .arg(pid, title).arg(year).arg(release, language).arg(rating).arg(flags).toUtf8();
+}
+
+QByteArray podnapisiXml(const QList<QByteArray> &subtitles)
+{
+    QByteArray xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><results><pagination><current>1</current>"
+                     "<count>1</count><results>" + QByteArray::number(subtitles.size()) + "</results></pagination>";
+    for (const QByteArray &subtitle : subtitles)
+        xml += subtitle;
+    return xml + "</results>";
+}
+
+// A ZIP archive with the given files, deflated.
+QByteArray makeZip(const QList<std::pair<QString, QByteArray>> &files)
+{
+    QByteArray zip;
+    QByteArray directory;
+    auto u16 = [](QByteArray &out, quint16 value) { value = qToLittleEndian(value); out.append(reinterpret_cast<const char *>(&value), 2); };
+    auto u32 = [](QByteArray &out, quint32 value) { value = qToLittleEndian(value); out.append(reinterpret_cast<const char *>(&value), 4); };
+    for (const auto &[name, data] : files) {
+        QByteArray packed(compressBound(static_cast<uLong>(data.size())) + 16, Qt::Uninitialized);
+        z_stream stream{};
+        deflateInit2(&stream, Z_BEST_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY);
+        stream.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(data.constData()));
+        stream.avail_in = static_cast<uInt>(data.size());
+        stream.next_out = reinterpret_cast<Bytef *>(packed.data());
+        stream.avail_out = static_cast<uInt>(packed.size());
+        deflate(&stream, Z_FINISH);
+        packed.resize(static_cast<qsizetype>(stream.total_out));
+        deflateEnd(&stream);
+        const quint32 crc = crc32(0, reinterpret_cast<const Bytef *>(data.constData()), static_cast<uInt>(data.size()));
+        const QByteArray utf8 = name.toUtf8();
+        const quint32 offset = static_cast<quint32>(zip.size());
+        u32(zip, 0x04034b50); u16(zip, 20); u16(zip, 0); u16(zip, 8); u16(zip, 0); u16(zip, 0);
+        u32(zip, crc); u32(zip, packed.size()); u32(zip, data.size()); u16(zip, utf8.size()); u16(zip, 0);
+        zip += utf8 + packed;
+        u32(directory, 0x02014b50); u16(directory, 20); u16(directory, 20); u16(directory, 0); u16(directory, 8);
+        u16(directory, 0); u16(directory, 0); u32(directory, crc); u32(directory, packed.size()); u32(directory, data.size());
+        u16(directory, utf8.size()); u16(directory, 0); u16(directory, 0); u16(directory, 0); u16(directory, 0);
+        u32(directory, 0); u32(directory, offset);
+        directory += utf8;
+    }
+    const quint32 directoryOffset = static_cast<quint32>(zip.size());
+    zip += directory;
+    u32(zip, 0x06054b50); u16(zip, 0); u16(zip, 0); u16(zip, files.size()); u16(zip, files.size());
+    u32(zip, directory.size()); u32(zip, directoryOffset); u16(zip, 0);
+    return zip;
+}
+
+const QString kVideoName = QStringLiteral("The.Matrix.1999.1080p.BluRay.x264-GRP");
+
 } // namespace
 
 class SubtitleTest : public QObject
@@ -151,16 +216,22 @@ private Q_SLOTS:
 
     void parseFileName_data();
     void parseFileName();
-    void movieHash();
+    void hasher();
+    void sameRelease();
+    void zipArchive();
+    void podnapisiResults();
     void showAndHideSubtitles();
-    void dialogSearchesForPlayingFile();
-    void downloadAndApply();
-    void downloadToCache();
+    void searchesWithoutKey();
+    void downloadAndPlay();
+    void exactMatchWithKey();
+    void exactFallsBackToName();
+    void providerFallback();
     void manualSearch();
-    void queryEncoding();
-    void busyAndCancel();
-    void apiErrors();
-    void missingApiKey();
+    void noResults();
+    void offline();
+    void badDownload();
+    void cancelSearch();
+    void smallFileSearchesByName();
 
 private:
     QVariant prop(const char *name) const { return m_mpv->mpvProperty(QString::fromLatin1(name)); }
@@ -169,8 +240,9 @@ private:
     void press(int key, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
     QMenu *subtitleMenu() const;
     QAction *menuAction(QMenu *menu, const QString &text) const;
-    // Opens the dialog with D and waits for its first search to finish.
+    // Opens the dialog with D and waits for its first search to end.
     SubtitleDownloadDialog *openDialog();
+    QList<MockServer::Request> requests(const QString &pathPrefix) const;
     MockServer::Response defaultResponse(const MockServer::Request &request);
 
     QTemporaryDir m_dir;
@@ -186,9 +258,10 @@ void SubtitleTest::initTestCase()
 {
     QVERIFY(m_dir.isValid());
     QVERIFY(QDir().mkpath(m_dir.filePath(QStringLiteral("movies"))));
-    m_video = m_dir.filePath(QStringLiteral("movies/The.Matrix.1999.1080p.BluRay.x264-GRP.mkv"));
+    m_video = m_dir.filePath(QStringLiteral("movies/%1.mkv").arg(kVideoName));
     if (!makeTestClip(m_video))
         QSKIP("ffmpeg is needed to generate the test clip");
+    QVERIFY(QFileInfo(m_video).size() >= SubtitleHasher::kMinimumSize);
     m_srt1 = m_dir.filePath(QStringLiteral("first.srt"));
     m_srt2 = m_dir.filePath(QStringLiteral("second.srt"));
     for (const QString &path : {m_srt1, m_srt2}) {
@@ -199,30 +272,37 @@ void SubtitleTest::initTestCase()
 
     QVERIFY(m_server.listen());
     qputenv("TOPPLAYER_OPENSUBTITLES_URL", m_server.url(QStringLiteral("/api/v1")).toUtf8());
+    qputenv("TOPPLAYER_PODNAPISI_URL", m_server.url(QString()).toUtf8());
 }
 
 MockServer::Response SubtitleTest::defaultResponse(const MockServer::Request &request)
 {
     const QString path = request.url.path();
+    // podnapisi.net: a near-identical release, an exact release match (listed
+    // first by the player), and a hearing impaired one.
+    if (request.method == "GET" && path == QLatin1String("/subtitles/search/old")) {
+        return {200, podnapisiXml({
+            podnapisiSubtitle(QStringLiteral("aB1"), QStringLiteral("The Matrix"), 1999, QStringLiteral("The.Matrix.1999.720p.WEB"),
+                              QStringLiteral("en"), 8.5),
+            podnapisiSubtitle(QStringLiteral("cD2"), QStringLiteral("The Matrix"), 1999, kVideoName, QStringLiteral("en"), 9.0),
+            podnapisiSubtitle(QStringLiteral("eF3"), QStringLiteral("The Matrix"), 1999, QString(), QStringLiteral("en"), 0,
+                              QStringLiteral("nh")),
+        }), "text/xml"};
+    }
+    if (request.method == "GET" && path.startsWith(QLatin1String("/subtitles/")) && path.endsWith(QLatin1String("/download")))
+        return {200, makeZip({{QStringLiteral("readme.nfo"), "release notes"}, {kVideoName + QStringLiteral(".srt"), kSrt}}),
+                "application/zip"};
+    // OpenSubtitles: one exact match for a hash search, plain results otherwise.
     if (request.method == "GET" && path == QLatin1String("/api/v1/subtitles")) {
-        const QJsonObject body{
-            {QStringLiteral("total_count"), 3},
-            {QStringLiteral("data"), QJsonArray{
-                result(101, QStringLiteral("en"), QStringLiteral("The.Matrix.1999.Popular.srt"), 52000, 8.4, false, false),
-                result(102, QStringLiteral("en"), QStringLiteral("The.Matrix.1999.Styled.ass"), 900, 0, true, false),
-                result(103, QStringLiteral("en"), QStringLiteral("The.Matrix.1999.1080p.BluRay.x264-GRP.srt"), 300, 9.1, false, true),
-            }},
-        };
-        return {200, QJsonDocument(body).toJson()};
+        const bool byHash = QUrlQuery(request.url).hasQueryItem(QStringLiteral("moviehash"));
+        QJsonArray data{result(101, QStringLiteral("en"), QStringLiteral("Matrix.Popular.srt"), 52000, 8.4, false, false)};
+        if (byHash)
+            data.append(result(103, QStringLiteral("en"), kVideoName + QStringLiteral(".srt"), 300, 9.1, false, true));
+        return {200, QJsonDocument(QJsonObject{{QStringLiteral("data"), data}}).toJson()};
     }
     if (request.method == "POST" && path == QLatin1String("/api/v1/download")) {
         const int fileId = QJsonDocument::fromJson(request.body).object().value(QStringLiteral("file_id")).toInt();
-        const QJsonObject body{
-            {QStringLiteral("link"), m_server.url(QStringLiteral("/files/%1").arg(fileId))},
-            {QStringLiteral("file_name"), QStringLiteral("file.srt")},
-            {QStringLiteral("remaining"), 19},
-        };
-        return {200, QJsonDocument(body).toJson()};
+        return {200, QJsonDocument(QJsonObject{{QStringLiteral("link"), m_server.url(QStringLiteral("/files/%1").arg(fileId))}}).toJson()};
     }
     if (request.method == "GET" && path.startsWith(QLatin1String("/files/")))
         return {200, kSrt, "application/x-subrip"};
@@ -231,9 +311,10 @@ MockServer::Response SubtitleTest::defaultResponse(const MockServer::Request &re
 
 void SubtitleTest::init()
 {
-    SubtitleSearch::setUserApiKey(QStringLiteral("test-key"));
+    // No key: the dialog must work without one.
+    SubtitleSearch::setUserApiKey(QString());
     SubtitleSearch::setLanguage(QStringLiteral("en"));
-    SubtitleSearch::setSaveBesideVideo(true);
+    SubtitleSearch::setSaveBesideVideo(false);
     m_server.requests.clear();
     m_server.handler = [this](const MockServer::Request &request) { return defaultResponse(request); };
 
@@ -252,16 +333,17 @@ void SubtitleTest::init()
 
 void SubtitleTest::cleanup()
 {
-    // Close a dialog left open by a failed check.
-    if (QWidget *modal = QApplication::activeModalWidget())
-        modal->close();
+    while (QWidget *modal = QApplication::activeModalWidget())
+        delete modal;
     delete m_window;
     m_window = nullptr;
     m_mpv = nullptr;
-    // Downloaded subtitles would otherwise be picked up next time.
-    const QDir movies(m_dir.filePath(QStringLiteral("movies")));
-    for (const QString &name : movies.entryList({QStringLiteral("*.srt"), QStringLiteral("*.ass")}, QDir::Files))
-        QFile::remove(movies.filePath(name));
+    // Downloads would otherwise be picked up next time.
+    for (const QString &dir : {m_dir.filePath(QStringLiteral("movies")), SubtitleSearch::cacheDir()}) {
+        const QDir folder(dir);
+        for (const QString &name : folder.entryList({QStringLiteral("*.srt"), QStringLiteral("*.ass")}, QDir::Files))
+            QFile::remove(folder.filePath(name));
+    }
 }
 
 QWidget *SubtitleTest::keyTarget() const
@@ -304,8 +386,18 @@ SubtitleDownloadDialog *SubtitleTest::openDialog()
     SubtitleDownloadDialog *dialog = nullptr;
     [&] { QTRY_VERIFY((dialog = m_window->findChild<SubtitleDownloadDialog *>()) && dialog->isVisible()); }();
     if (dialog)
-        [&] { QTRY_VERIFY_WITH_TIMEOUT(!dialog->isBusy() && !dialog->results().isEmpty(), 10000); }();
+        [&] { QTRY_VERIFY_WITH_TIMEOUT(!dialog->isBusy() && !m_server.requests.isEmpty(), 10000); }();
     return dialog;
+}
+
+QList<MockServer::Request> SubtitleTest::requests(const QString &pathPrefix) const
+{
+    QList<MockServer::Request> matching;
+    for (const MockServer::Request &request : m_server.requests) {
+        if (request.url.path().startsWith(pathPrefix))
+            matching.append(request);
+    }
+    return matching;
 }
 
 void SubtitleTest::parseFileName_data()
@@ -339,7 +431,7 @@ void SubtitleTest::parseFileName()
     QCOMPARE(parsed.episode, episode);
 }
 
-void SubtitleTest::movieHash()
+void SubtitleTest::hasher()
 {
     // Size plus the 64-bit words of the first and last 64 KiB: here the first
     // chunk is 0x01 bytes and the last is zeros.
@@ -349,14 +441,61 @@ void SubtitleTest::movieHash()
     file.write(QByteArray(65536, '\x01'));
     file.write(QByteArray(2 * 65536, '\0'));
     file.close();
-    QCOMPARE(SubtitleSearch::movieHash(path), QStringLiteral("2020202020232000"));
+    QCOMPARE(SubtitleHasher::hash(path), QStringLiteral("2020202020232000"));
 
-    // Too small to hash.
+    // Files under 128 KiB are searched by name instead.
     QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
-    file.write(QByteArray(1000, 'x'));
+    file.write(QByteArray(128 * 1024 - 1, 'x'));
     file.close();
-    QCOMPARE(SubtitleSearch::movieHash(path), QString());
-    QCOMPARE(SubtitleSearch::movieHash(m_dir.filePath(QStringLiteral("missing.mkv"))), QString());
+    QCOMPARE(SubtitleHasher::hash(path), QString());
+    QCOMPARE(SubtitleHasher::hash(m_dir.filePath(QStringLiteral("missing.mkv"))), QString());
+}
+
+void SubtitleTest::sameRelease()
+{
+    const QString video = QStringLiteral("/v/%1.mkv").arg(kVideoName);
+    QVERIFY(SubtitleSearch::isSameRelease(kVideoName, video));
+    QVERIFY(SubtitleSearch::isSameRelease(kVideoName + QStringLiteral(".srt"), video));
+    QVERIFY(SubtitleSearch::isSameRelease(QStringLiteral("the matrix 1999 1080p bluray x264 grp eng"), video));
+    QVERIFY(!SubtitleSearch::isSameRelease(QStringLiteral("The.Matrix.1999.720p.WEB"), video));
+    QVERIFY(!SubtitleSearch::isSameRelease(QStringLiteral("The Matrix"), video));
+    QVERIFY(!SubtitleSearch::isSameRelease(QString(), video));
+}
+
+void SubtitleTest::zipArchive()
+{
+    const QByteArray zip = makeZip({{QStringLiteral("info.nfo"), "x"}, {QStringLiteral("sub/Movie.srt"), kSrt}});
+    QVERIFY(ZipArchive::isZip(zip));
+    QCOMPARE(ZipArchive::fileNames(zip), (QStringList{QStringLiteral("info.nfo"), QStringLiteral("sub/Movie.srt")}));
+    const auto entry = ZipArchive::extract(zip, [](const QString &name) { return name.endsWith(QLatin1String(".srt")); });
+    QVERIFY(entry);
+    QCOMPARE(entry->name, QStringLiteral("sub/Movie.srt"));
+    QCOMPARE(entry->data, kSrt);
+    QVERIFY(!ZipArchive::extract(zip, [](const QString &name) { return name.endsWith(QLatin1String(".ass")); }));
+    QVERIFY(!ZipArchive::isZip("<html>"));
+    QVERIFY(!ZipArchive::extract(zip.left(zip.size() / 2), [](const QString &) { return true; }));
+}
+
+void SubtitleTest::podnapisiResults()
+{
+    const QList<SubtitleResult> results = PodnapisiClient::parseResults(podnapisiXml({
+        podnapisiSubtitle(QStringLiteral("aB1"), QStringLiteral("The Matrix"), 1999, QStringLiteral("Rel.One Rel.Two"),
+                          QStringLiteral("en"), 8.5, QStringLiteral("hn")),
+        podnapisiSubtitle(QStringLiteral("cD2"), QStringLiteral("Amélie"), 2001, QString(), QStringLiteral("fr"), 0),
+    }));
+    QCOMPARE(results.size(), 2);
+    QCOMPARE(results[0].provider, QStringLiteral("Podnapisi"));
+    QCOMPARE(results[0].id, QStringLiteral("aB1"));
+    QCOMPARE(results[0].fileName, QStringLiteral("Rel.One"));
+    QCOMPARE(results[0].language, QStringLiteral("en"));
+    QCOMPARE(results[0].rating, 8.5);
+    QCOMPARE(results[0].format, QStringLiteral("srt"));
+    QVERIFY(results[0].hearingImpaired);
+    QCOMPARE(results[0].pageUrl, QUrl(QStringLiteral("http://www.podnapisi.net/subtitles/aB1")));
+    // Without a release, the title and year.
+    QCOMPARE(results[1].fileName, QStringLiteral("Amélie (2001)"));
+    QVERIFY(!results[1].hearingImpaired);
+    QVERIFY(PodnapisiClient::parseResults("<results></results>").isEmpty());
 }
 
 void SubtitleTest::showAndHideSubtitles()
@@ -379,7 +518,6 @@ void SubtitleTest::showAndHideSubtitles()
     QTRY_VERIFY(prop("sub-visibility").toBool());
     Q_EMIT m_window->findChild<PlayerMenu *>()->aboutToShow();
     QVERIFY(show->isChecked());
-    // The menu item does the same.
     show->trigger();
     QTRY_VERIFY(!prop("sub-visibility").toBool());
     show->trigger();
@@ -413,117 +551,156 @@ void SubtitleTest::showAndHideSubtitles()
     QTRY_VERIFY(prop("secondary-sub-visibility").toBool());
 }
 
-void SubtitleTest::dialogSearchesForPlayingFile()
+void SubtitleTest::searchesWithoutKey()
 {
+    if (!SubtitleSearch::builtInApiKey().isEmpty())
+        QSKIP("This build has a built-in OpenSubtitles key");
     SubtitleDownloadDialog *dialog = openDialog();
     QVERIFY(dialog);
     QCOMPARE(dialog->findChild<QLineEdit *>(QStringLiteral("SubtitleQuery"))->text(), QStringLiteral("The Matrix"));
     QCOMPARE(dialog->findChild<QComboBox *>(QStringLiteral("SubtitleLanguage"))->currentData().toString(), QStringLiteral("en"));
-    QVERIFY(dialog->findChild<QCheckBox *>(QStringLiteral("SubtitleMatchHash"))->isChecked());
-    QCOMPARE(dialog->movieHash(), SubtitleSearch::movieHash(m_video));
-    QCOMPARE(dialog->movieHash().size(), 16);
+    auto *hashButton = dialog->findChild<QPushButton *>(QStringLiteral("SubtitleHashButton"));
+    QCOMPARE(hashButton->text(), QStringLiteral("Search by Hash (Exact Match)"));
+    QVERIFY(hashButton->isEnabled());
+    QCOMPARE(dialog->findChild<QPushButton *>(QStringLiteral("SubtitleNameButton"))->text(), QStringLiteral("Search by Name"));
+    QCOMPARE(dialog->movieHash(), SubtitleHasher::hash(m_video));
 
-    // One search, with the parameters in alphabetical order and the API headers.
-    QCOMPARE(m_server.requests.size(), 1);
-    const MockServer::Request &request = m_server.requests.first();
-    QCOMPARE(request.method, QByteArray("GET"));
-    QCOMPARE(request.url.path(), QStringLiteral("/api/v1/subtitles"));
-    const QUrlQuery query(request.url);
-    QStringList keys;
-    for (const auto &item : query.queryItems())
-        keys.append(item.first);
-    QCOMPARE(keys, (QStringList{QStringLiteral("languages"), QStringLiteral("moviehash"), QStringLiteral("query"),
-                                QStringLiteral("year")}));
-    QCOMPARE(query.queryItemValue(QStringLiteral("languages")), QStringLiteral("en"));
-    QCOMPARE(query.queryItemValue(QStringLiteral("moviehash")), dialog->movieHash());
-    QCOMPARE(query.queryItemValue(QStringLiteral("query"), QUrl::FullyDecoded), QStringLiteral("the matrix"));
-    QCOMPARE(query.queryItemValue(QStringLiteral("year")), QStringLiteral("1999"));
-    QCOMPARE(request.headers.value("api-key"), QByteArray("test-key"));
-    QCOMPARE(request.headers.value("user-agent"), QByteArray("TopPlayer v" APP_VERSION));
+    // No key, no OpenSubtitles: only podnapisi.net was asked, by name, as
+    // TopPlayer.
+    QVERIFY(requests(QStringLiteral("/api/")).isEmpty());
+    const QList<MockServer::Request> searches = requests(QStringLiteral("/subtitles/search/old"));
+    QCOMPARE(searches.size(), 1);
+    const QUrlQuery query(searches.first().url);
+    QCOMPARE(query.queryItemValue(QStringLiteral("sXML")), QStringLiteral("1"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("sK"), QUrl::FullyDecoded), QStringLiteral("The Matrix"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("sL")), QStringLiteral("en"));
+    QCOMPARE(query.queryItemValue(QStringLiteral("sY")), QStringLiteral("1999"));
+    const QByteArray agent = searches.first().headers.value("user-agent");
+    QCOMPARE(agent, QByteArray("TopPlayer/" APP_VERSION " (Linux; Qt6)"));
+    QVERIFY(!agent.contains("VLC"));
+    QVERIFY(!searches.first().headers.contains("api-key"));
 
-    // The exact (hash) match comes first, then by downloads.
+    // The release named like the file comes first.
     auto *table = dialog->findChild<QTreeWidget *>(QStringLiteral("SubtitleResults"));
-    QCOMPARE(table->topLevelItemCount(), 3);
     QStringList headers;
     for (int column = 0; column < table->columnCount(); ++column)
         headers.append(table->headerItem()->text(column));
-    QCOMPARE(headers, (QStringList{QStringLiteral("Language"), QStringLiteral("Subtitle File Name"), QStringLiteral("Downloads"),
-                                   QStringLiteral("Rating"), QStringLiteral("Format"), QStringLiteral("HI")}));
+    QCOMPARE(headers, (QStringList{QStringLiteral("Language"), QStringLiteral("Subtitle Title / Release"),
+                                   QStringLiteral("Provider"), QStringLiteral("Rating"), QStringLiteral("Format")}));
+    QCOMPARE(table->topLevelItemCount(), 3);
     QTreeWidgetItem *top = table->topLevelItem(0);
-    QCOMPARE(top->text(1), QStringLiteral("The.Matrix.1999.1080p.BluRay.x264-GRP.srt"));
-    QCOMPARE(top->data(1, Qt::UserRole + 2).toString(), QStringLiteral("Exact match"));
+    QCOMPARE(top->text(1), kVideoName);
+    QCOMPARE(top->data(1, Qt::UserRole + 2).toStringList(), QStringList{QStringLiteral("Release match")});
     QCOMPARE(top->text(0), QStringLiteral("English"));
-    QCOMPARE(top->text(3), QStringLiteral("9.1"));
-    QCOMPARE(table->topLevelItem(1)->text(1), QStringLiteral("The.Matrix.1999.Popular.srt"));
-    QTreeWidgetItem *styled = table->topLevelItem(2);
-    QCOMPARE(styled->text(4), QStringLiteral(".ass"));
-    QCOMPARE(styled->data(5, Qt::UserRole + 2).toString(), QStringLiteral("HI"));
-    QCOMPARE(styled->text(3), QStringLiteral("–"));
-
-    // Downloads sort by number, not text.
-    table->sortByColumn(2, Qt::DescendingOrder);
-    QCOMPARE(table->topLevelItem(0)->text(1), QStringLiteral("The.Matrix.1999.Popular.srt"));
-    QCOMPARE(table->topLevelItem(2)->text(1), QStringLiteral("The.Matrix.1999.1080p.BluRay.x264-GRP.srt"));
+    QCOMPARE(top->text(2), QStringLiteral("Podnapisi"));
+    QCOMPARE(top->text(3), QStringLiteral("9.0"));
+    QCOMPARE(top->text(4), QStringLiteral(".srt"));
+    QTreeWidgetItem *hearingImpaired = table->topLevelItem(2);
+    QCOMPARE(hearingImpaired->text(1), QStringLiteral("The Matrix (1999)"));
+    QCOMPARE(hearingImpaired->data(1, Qt::UserRole + 2).toStringList(), QStringList{QStringLiteral("HI")});
+    QCOMPARE(hearingImpaired->text(3), QStringLiteral("–"));
+    // Says why there are no exact matches.
+    auto *status = dialog->findChild<QLabel *>(QStringLiteral("SubtitleStatus"));
+    QVERIFY(status->text().contains(QLatin1String("Exact matching needs OpenSubtitles")));
+    QVERIFY(status->text().endsWith(QLatin1String("3 subtitle(s) found")));
 }
 
-void SubtitleTest::downloadAndApply()
+void SubtitleTest::downloadAndPlay()
 {
     // Hidden subtitles come back for a subtitle the user just downloaded.
     m_mpv->setMpvProperty(QStringLiteral("sub-visibility"), QStringLiteral("no"));
     SubtitleDownloadDialog *dialog = openDialog();
     QVERIFY(dialog);
     auto *table = dialog->findChild<QTreeWidget *>(QStringLiteral("SubtitleResults"));
-    table->setCurrentItem(table->topLevelItem(2)); // the .ass one
+    table->setCurrentItem(table->topLevelItem(0));
     m_server.requests.clear();
-    QTest::mouseClick(dialog->findChild<QPushButton *>(QStringLiteral("SubtitleDownloadButton")), Qt::LeftButton);
-
-    // The dialog closes once the file is saved next to the video and loaded.
+    auto *button = dialog->findChild<QPushButton *>(QStringLiteral("SubtitleDownloadButton"));
+    QCOMPARE(button->text(), QStringLiteral("Download && Play"));
+    QTest::mouseClick(button, Qt::LeftButton);
     QTRY_VERIFY_WITH_TIMEOUT(!m_window->findChild<SubtitleDownloadDialog *>(), 10000);
-    QCOMPARE(m_server.requests.size(), 2);
-    QCOMPARE(m_server.requests[0].method, QByteArray("POST"));
-    QCOMPARE(QJsonDocument::fromJson(m_server.requests[0].body).object().value(QStringLiteral("file_id")).toInt(), 102);
-    QCOMPARE(m_server.requests[0].headers.value("api-key"), QByteArray("test-key"));
-    QCOMPARE(m_server.requests[1].url.path(), QStringLiteral("/files/102"));
-    QVERIFY(!m_server.requests[1].headers.contains("api-key")); // not sent to the file server
 
-    const QString saved = m_dir.filePath(QStringLiteral("movies/The.Matrix.1999.1080p.BluRay.x264-GRP.en.ass"));
-    QVERIFY(QFileInfo::exists(saved));
+    // Fetched as a ZIP from the result's page, unpacked into the cache.
+    QCOMPARE(m_server.requests.size(), 1);
+    const MockServer::Request &request = m_server.requests.first();
+    QCOMPARE(request.url.path(), QStringLiteral("/subtitles/cD2/download"));
+    QCOMPARE(QUrlQuery(request.url).queryItemValue(QStringLiteral("container")), QStringLiteral("zip"));
+    QCOMPARE(request.headers.value("referer"), QByteArray("http://www.podnapisi.net/subtitles/cD2"));
+    const QString saved = SubtitleSearch::cacheDir() + QStringLiteral("/%1.en.srt").arg(kVideoName);
+    QVERIFY(saved.startsWith(qEnvironmentVariable("XDG_CACHE_HOME")));
     QFile file(saved);
     QVERIFY(file.open(QIODevice::ReadOnly));
     QCOMPARE(file.readAll(), kSrt);
 
-    // Loaded, selected and shown.
-    QTRY_VERIFY(propString("current-tracks/sub/external-filename").endsWith(QLatin1String(".en.ass")));
+    // Selected, shown, and confirmed on the OSD.
+    QTRY_COMPARE(propString("current-tracks/sub/external-filename"), saved);
     QTRY_VERIFY(prop("sub-visibility").toBool());
     QTRY_COMPARE(propString("sub-text"), QStringLiteral("Hello from the mock server"));
     auto *osd = m_window->findChild<OsdWidget *>();
     QVERIFY(osd->isVisible());
-    QCOMPARE(osd->text(), QStringLiteral("Subtitle loaded: The.Matrix.1999.1080p.BluRay.x264-GRP.en.ass"));
-
-    // A second download doesn't overwrite the first.
-    dialog = openDialog();
-    QVERIFY(dialog);
-    table = dialog->findChild<QTreeWidget *>(QStringLiteral("SubtitleResults"));
-    table->setCurrentItem(table->topLevelItem(2));
-    dialog->downloadSelected();
-    QTRY_VERIFY_WITH_TIMEOUT(!m_window->findChild<SubtitleDownloadDialog *>(), 10000);
-    QVERIFY(QFileInfo::exists(m_dir.filePath(QStringLiteral("movies/The.Matrix.1999.1080p.BluRay.x264-GRP.en.2.ass"))));
+    QCOMPARE(osd->text(), QStringLiteral("Subtitles loaded: English / %1.en.srt").arg(kVideoName));
 }
 
-void SubtitleTest::downloadToCache()
+void SubtitleTest::exactMatchWithKey()
 {
-    SubtitleSearch::setSaveBesideVideo(false);
+    SubtitleSearch::setUserApiKey(QStringLiteral("test-key"));
     SubtitleDownloadDialog *dialog = openDialog();
     QVERIFY(dialog);
-    // Double-clicking (activating) a row downloads it.
+    // Only the hash and language: exact matches.
+    const QList<MockServer::Request> searches = requests(QStringLiteral("/api/v1/subtitles"));
+    QCOMPARE(searches.size(), 1);
+    const QUrlQuery query(searches.first().url);
+    QCOMPARE(query.queryItemValue(QStringLiteral("moviehash")), SubtitleHasher::hash(m_video));
+    QVERIFY(!query.hasQueryItem(QStringLiteral("query")));
+    QCOMPARE(searches.first().headers.value("api-key"), QByteArray("test-key"));
+    QVERIFY(requests(QStringLiteral("/subtitles/search")).isEmpty());
+
     auto *table = dialog->findChild<QTreeWidget *>(QStringLiteral("SubtitleResults"));
-    Q_EMIT table->itemActivated(table->topLevelItem(0), 0);
+    QCOMPARE(table->topLevelItemCount(), 1);
+    QCOMPARE(table->topLevelItem(0)->text(2), QStringLiteral("OpenSubtitles"));
+    QCOMPARE(table->topLevelItem(0)->data(1, Qt::UserRole + 2).toStringList(), QStringList{QStringLiteral("Exact match")});
+
+    dialog->downloadSelected();
     QTRY_VERIFY_WITH_TIMEOUT(!m_window->findChild<SubtitleDownloadDialog *>(), 10000);
-    const QString cached = SubtitleSearch::cacheDir() + QStringLiteral("/The.Matrix.1999.1080p.BluRay.x264-GRP.en.srt");
-    QVERIFY(cached.startsWith(qEnvironmentVariable("XDG_CACHE_HOME")));
-    QVERIFY(QFileInfo::exists(cached));
-    QTRY_COMPARE(propString("current-tracks/sub/external-filename"), cached);
-    QFile::remove(cached);
+    QTRY_VERIFY(propString("current-tracks/sub/external-filename").startsWith(SubtitleSearch::cacheDir()));
+}
+
+void SubtitleTest::exactFallsBackToName()
+{
+    SubtitleSearch::setUserApiKey(QStringLiteral("test-key"));
+    m_server.handler = [this](const MockServer::Request &request) -> MockServer::Response {
+        // OpenSubtitles knows no exact match.
+        if (request.url.path() == QLatin1String("/api/v1/subtitles") && QUrlQuery(request.url).hasQueryItem(QStringLiteral("moviehash")))
+            return {200, "{\"data\":[]}"};
+        return defaultResponse(request);
+    };
+    SubtitleDownloadDialog *dialog = openDialog();
+    QVERIFY(dialog);
+    QTRY_VERIFY(!requests(QStringLiteral("/subtitles/search/old")).isEmpty());
+    QTRY_COMPARE(dialog->findChild<QTreeWidget *>(QStringLiteral("SubtitleResults"))->topLevelItemCount(), 3);
+    QVERIFY(dialog->findChild<QLabel *>(QStringLiteral("SubtitleStatus"))->text().startsWith(
+        QLatin1String("No exact match for this file; these are matches by name.")));
+}
+
+void SubtitleTest::providerFallback()
+{
+    SubtitleSearch::setUserApiKey(QStringLiteral("test-key"));
+    m_server.handler = [this](const MockServer::Request &request) -> MockServer::Response {
+        if (request.url.path() == QLatin1String("/subtitles/search/old"))
+            return {503, "<html>busy</html>", "text/html"};
+        return defaultResponse(request);
+    };
+    SubtitleDownloadDialog *dialog = openDialog();
+    QVERIFY(dialog);
+    m_server.requests.clear();
+    // podnapisi.net is down: OpenSubtitles answers the name search instead.
+    dialog->searchByName();
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->isBusy() && !requests(QStringLiteral("/api/v1/subtitles")).isEmpty(), 10000);
+    QCOMPARE(requests(QStringLiteral("/subtitles/search/old")).size(), 1);
+    QCOMPARE(QUrlQuery(requests(QStringLiteral("/api/v1/subtitles")).first().url).queryItemValue(QStringLiteral("query"), QUrl::FullyDecoded),
+             QStringLiteral("the matrix"));
+    auto *table = dialog->findChild<QTreeWidget *>(QStringLiteral("SubtitleResults"));
+    QTRY_COMPARE(table->topLevelItemCount(), 1);
+    QCOMPARE(table->topLevelItem(0)->text(2), QStringLiteral("OpenSubtitles"));
 }
 
 void SubtitleTest::manualSearch()
@@ -533,44 +710,72 @@ void SubtitleTest::manualSearch()
     m_server.requests.clear();
     auto *query = dialog->findChild<QLineEdit *>(QStringLiteral("SubtitleQuery"));
     query->setFocus();
-    query->selectAll();
-    QTest::keyClicks(query, QStringLiteral("Some Other Film"));
-    dialog->findChild<QCheckBox *>(QStringLiteral("SubtitleMatchHash"))->setChecked(false);
+    // (QTest can't type non-ASCII keys.)
+    query->setText(QStringLiteral("Tom & Jerry + Friends Été"));
     auto *language = dialog->findChild<QComboBox *>(QStringLiteral("SubtitleLanguage"));
+    QVERIFY(language->findData(QStringLiteral("am")) >= 0); // Amharic is offered
     language->setCurrentIndex(language->findData(QStringLiteral("fr")));
     QTest::keyClick(query, Qt::Key_Return);
-    QTRY_VERIFY_WITH_TIMEOUT(!dialog->isBusy() && m_server.requests.size() == 1, 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->isBusy() && !m_server.requests.isEmpty(), 10000);
 
-    // The file's year and hash don't apply to a title the user typed.
-    const QUrlQuery sent(m_server.requests.first().url);
-    QCOMPARE(sent.queryItemValue(QStringLiteral("query"), QUrl::FullyDecoded), QStringLiteral("some other film"));
-    QCOMPARE(sent.queryItemValue(QStringLiteral("languages")), QStringLiteral("fr"));
-    QVERIFY(!sent.hasQueryItem(QStringLiteral("year")));
-    QVERIFY(!sent.hasQueryItem(QStringLiteral("moviehash")));
-    // The language is remembered.
+    // A typed title: no year from the file name; the language is remembered.
+    const QUrlQuery sent(requests(QStringLiteral("/subtitles/search/old")).first().url);
+    QCOMPARE(sent.queryItemValue(QStringLiteral("sK"), QUrl::FullyDecoded), QStringLiteral("Tom & Jerry + Friends Été"));
+    QCOMPARE(sent.queryItemValue(QStringLiteral("sL")), QStringLiteral("fr"));
+    QVERIFY(!sent.hasQueryItem(QStringLiteral("sY")));
     QCOMPARE(SubtitleSearch::language(), QStringLiteral("fr"));
-
-    // "All Languages" leaves the filter out.
-    language->setCurrentIndex(language->findData(QString()));
-    m_server.requests.clear();
-    dialog->search();
-    QTRY_VERIFY_WITH_TIMEOUT(!dialog->isBusy() && m_server.requests.size() == 1, 10000);
-    QVERIFY(!QUrlQuery(m_server.requests.first().url).hasQueryItem(QStringLiteral("languages")));
 }
 
-void SubtitleTest::queryEncoding()
+void SubtitleTest::noResults()
 {
+    m_server.handler = [](const MockServer::Request &) -> MockServer::Response {
+        return {200, podnapisiXml({}), "text/xml"};
+    };
     SubtitleDownloadDialog *dialog = openDialog();
     QVERIFY(dialog);
-    m_server.requests.clear();
-    dialog->findChild<QLineEdit *>(QStringLiteral("SubtitleQuery"))->setText(QStringLiteral("Tom & Jerry + Friends Été 100%"));
-    dialog->search();
-    QTRY_VERIFY_WITH_TIMEOUT(!dialog->isBusy() && m_server.requests.size() == 1, 10000);
-    const QUrlQuery sent(m_server.requests.first().url);
-    QCOMPARE(sent.queryItemValue(QStringLiteral("query"), QUrl::FullyDecoded), QStringLiteral("tom & jerry + friends été 100%"));
+    auto *status = dialog->findChild<QLabel *>(QStringLiteral("SubtitleStatus"));
+    QTRY_VERIFY(status->text().endsWith(QLatin1String("No subtitles found in English. Try another title or language.")));
+    QCOMPARE(dialog->findChild<QTreeWidget *>(QStringLiteral("SubtitleResults"))->topLevelItemCount(), 0);
+    QVERIFY(!dialog->findChild<QPushButton *>(QStringLiteral("SubtitleDownloadButton"))->isEnabled());
+    QVERIFY(dialog->findChild<QPushButton *>(QStringLiteral("SubtitleNameButton"))->isEnabled());
 }
 
-void SubtitleTest::busyAndCancel()
+void SubtitleTest::offline()
+{
+    // Nothing listens on port 1.
+    qputenv("TOPPLAYER_PODNAPISI_URL", "http://127.0.0.1:1");
+    m_window->activateWindow();
+    m_mpv->setFocus();
+    QTRY_VERIFY(m_window->isActiveWindow());
+    press(Qt::Key_D);
+    SubtitleDownloadDialog *dialog = nullptr;
+    QTRY_VERIFY((dialog = m_window->findChild<SubtitleDownloadDialog *>()));
+    auto *status = dialog->findChild<QLabel *>(QStringLiteral("SubtitleStatus"));
+    QTRY_COMPARE_WITH_TIMEOUT(status->text(), QStringLiteral("Can't reach podnapisi.net. Check your internet connection."), 10000);
+    QVERIFY(!dialog->isBusy());
+    QVERIFY(!dialog->findChild<QProgressBar *>(QStringLiteral("SubtitleProgress"))->isVisible());
+    QVERIFY(m_mpv->isVisible()); // and the player carries on
+    qputenv("TOPPLAYER_PODNAPISI_URL", m_server.url(QString()).toUtf8());
+}
+
+void SubtitleTest::badDownload()
+{
+    m_server.handler = [this](const MockServer::Request &request) -> MockServer::Response {
+        if (request.url.path().endsWith(QLatin1String("/download")))
+            return {200, "<!DOCTYPE html><html>Please log in</html>", "text/html"};
+        return defaultResponse(request);
+    };
+    SubtitleDownloadDialog *dialog = openDialog();
+    QVERIFY(dialog);
+    dialog->downloadSelected();
+    auto *status = dialog->findChild<QLabel *>(QStringLiteral("SubtitleStatus"));
+    QTRY_COMPARE_WITH_TIMEOUT(status->text(), QStringLiteral("podnapisi.net didn't send the subtitle file. Try another one."), 10000);
+    QVERIFY(dialog->isVisible());
+    QVERIFY(!dialog->isBusy());
+    QCOMPARE(propString("sid"), QStringLiteral("no"));
+}
+
+void SubtitleTest::cancelSearch()
 {
     bool hold = false;
     m_server.handler = [&](const MockServer::Request &request) {
@@ -580,80 +785,42 @@ void SubtitleTest::busyAndCancel()
     };
     SubtitleDownloadDialog *dialog = openDialog();
     QVERIFY(dialog);
-
-    // While a search runs, the bar spins and the inputs wait.
     hold = true;
-    dialog->search();
+    dialog->searchByName();
     auto *progress = dialog->findChild<QProgressBar *>(QStringLiteral("SubtitleProgress"));
-    auto *searchButton = dialog->findChild<QPushButton *>(QStringLiteral("SubtitleSearchButton"));
     QVERIFY(dialog->isBusy());
     QVERIFY(progress->isVisible());
     QCOMPARE(progress->maximum(), 0); // indeterminate
-    QVERIFY(!searchButton->isEnabled());
-    QVERIFY(!dialog->findChild<QPushButton *>(QStringLiteral("SubtitleDownloadButton"))->isEnabled());
-    // The player keeps running meanwhile.
-    QVERIFY(m_window->isEnabled());
+    QVERIFY(!dialog->findChild<QPushButton *>(QStringLiteral("SubtitleNameButton"))->isEnabled());
 
-    // Esc stops the request first and keeps the dialog open; a second Esc closes it.
-    QTest::keyClick(dialog, Qt::Key_Escape);
+    // Cancel stops the request first and keeps the dialog; a second one closes it.
+    auto *cancel = dialog->findChild<QPushButton *>(QStringLiteral("SubtitleCancelButton"));
+    QTest::mouseClick(cancel, Qt::LeftButton);
     QVERIFY(!dialog->isBusy());
     QVERIFY(!progress->isVisible());
-    QVERIFY(searchButton->isEnabled());
     QCOMPARE(dialog->findChild<QLabel *>(QStringLiteral("SubtitleStatus"))->text(), QStringLiteral("Cancelled."));
-    QVERIFY(dialog->isVisible());
-    QTest::keyClick(dialog, Qt::Key_Escape);
+    QTest::mouseClick(cancel, Qt::LeftButton);
     QTRY_VERIFY(!m_window->findChild<SubtitleDownloadDialog *>());
 }
 
-void SubtitleTest::apiErrors()
+void SubtitleTest::smallFileSearchesByName()
 {
-    m_server.handler = [](const MockServer::Request &request) -> MockServer::Response {
-        if (request.method == "POST")
-            return {406, "{\"message\":\"You have downloaded your allowed 5 subtitles for 24h\"}"};
-        return {401, "{\"message\":\"You cannot consume this service\"}"};
-    };
-    press(Qt::Key_D);
-    SubtitleDownloadDialog *dialog = nullptr;
-    QTRY_VERIFY((dialog = m_window->findChild<SubtitleDownloadDialog *>()));
-    auto *status = dialog->findChild<QLabel *>(QStringLiteral("SubtitleStatus"));
-    QTRY_VERIFY_WITH_TIMEOUT(!dialog->isBusy() && status->text().contains(QLatin1String("You cannot consume")), 10000);
-    QVERIFY(status->text().startsWith(QLatin1String("OpenSubtitles refused the request")));
-    QVERIFY(!dialog->findChild<QProgressBar *>(QStringLiteral("SubtitleProgress"))->isVisible());
-
-    // A failed download reports the API's message and leaves the dialog open.
-    OpenSubtitlesClient::Result result;
-    result.fileId = 1;
-    QSignalSpy failed(dialog->client(), &OpenSubtitlesClient::failed);
-    dialog->client()->download(result, m_dir.filePath(QStringLiteral("never.srt")));
-    QTRY_COMPARE(failed.count(), 1);
-    QCOMPARE(failed.first().first().toString(), QStringLiteral("You have downloaded your allowed 5 subtitles for 24h"));
-    QVERIFY(!QFileInfo::exists(m_dir.filePath(QStringLiteral("never.srt"))));
-}
-
-void SubtitleTest::missingApiKey()
-{
-    SubtitleSearch::setUserApiKey(QString());
-    if (!SubtitleSearch::builtInApiKey().isEmpty())
-        QSKIP("This build has a built-in API key");
-    press(Qt::Key_D);
-    SubtitleDownloadDialog *dialog = nullptr;
-    QTRY_VERIFY((dialog = m_window->findChild<SubtitleDownloadDialog *>()));
+    // Under 128 KiB: no hash, so the dialog searches by name.
+    const QString small = m_dir.filePath(QStringLiteral("Small.Clip.2020.mkv"));
+    QVERIFY(makeTestClip(small, 2));
+    QVERIFY(QFileInfo(small).size() < SubtitleHasher::kMinimumSize);
+    m_window->openFile(small);
+    QTRY_COMPARE_WITH_TIMEOUT(propString("path"), small, 10000);
+    // (A request held back by the previous test can still trickle in.)
     QTest::qWait(100);
-    QVERIFY(m_server.requests.isEmpty());
-    auto *status = dialog->findChild<QLabel *>(QStringLiteral("SubtitleStatus"));
-    QVERIFY(status->text().contains(QLatin1String("API key")));
-
-    // Entering one in Settings searches right away.
-    QTimer::singleShot(0, [] {
-        QTRY_VERIFY(qobject_cast<SubtitleSettingsDialog *>(QApplication::activeModalWidget()));
-        auto *settings = qobject_cast<SubtitleSettingsDialog *>(QApplication::activeModalWidget());
-        settings->findChild<QLineEdit *>(QStringLiteral("ApiKeyEdit"))->setText(QStringLiteral("  new-key  "));
-        settings->accept();
-    });
-    QTest::mouseClick(dialog->findChild<QPushButton *>(QStringLiteral("SubtitleSettingsButton")), Qt::LeftButton);
-    QCOMPARE(SubtitleSearch::userApiKey(), QStringLiteral("new-key"));
-    QTRY_VERIFY_WITH_TIMEOUT(!dialog->isBusy() && m_server.requests.size() == 1, 10000);
-    QCOMPARE(m_server.requests.first().headers.value("api-key"), QByteArray("new-key"));
+    m_server.requests.clear();
+    SubtitleDownloadDialog *dialog = openDialog();
+    QVERIFY(dialog);
+    QVERIFY(dialog->movieHash().isEmpty());
+    QVERIFY(!dialog->findChild<QPushButton *>(QStringLiteral("SubtitleHashButton"))->isEnabled());
+    const QList<MockServer::Request> searches = requests(QStringLiteral("/subtitles/search/old"));
+    QVERIFY(!searches.isEmpty());
+    QCOMPARE(QUrlQuery(searches.last().url).queryItemValue(QStringLiteral("sK"), QUrl::FullyDecoded), QStringLiteral("Small Clip"));
 }
 
 int main(int argc, char *argv[])

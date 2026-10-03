@@ -1,6 +1,7 @@
 #include "PlaylistSession.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -47,10 +48,23 @@ void migrateLegacyConfig()
                       + QStringLiteral("/potplayer-linux"));
     if (QFileInfo::exists(target) || !legacy.exists())
         return;
-    if (!QDir().mkpath(target))
-        return;
-    for (const QFileInfo &file : legacy.entryInfoList(QDir::Files | QDir::Hidden))
-        QFile::copy(file.absoluteFilePath(), target + QLatin1Char('/') + file.fileName());
+    QDirIterator it(legacy.path(), QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString source = it.next();
+        const QString copy = target + QLatin1Char('/') + legacy.relativeFilePath(source);
+        if (QDir().mkpath(QFileInfo(copy).absolutePath()))
+            QFile::copy(source, copy);
+    }
+    QDir().mkpath(target);
+
+    // The library lists its saved playlists by path; point it at the copies.
+    QFile library(target + QStringLiteral("/library.json"));
+    if (library.exists() && library.open(QIODevice::ReadWrite)) {
+        QByteArray json = library.readAll();
+        json.replace((legacy.path() + QLatin1Char('/')).toUtf8(), (target + QLatin1Char('/')).toUtf8());
+        library.resize(0);
+        library.write(json);
+    }
 }
 
 QString sessionFile()
@@ -131,6 +145,16 @@ bool resumePlayback()
 void setResumePlayback(bool enabled)
 {
     setBoolSetting(QStringLiteral("playlist/resume"), enabled);
+}
+
+int drawerWidth(int defaultWidth)
+{
+    return QSettings(settingsFile(), QSettings::IniFormat).value(QStringLiteral("playlist/width"), defaultWidth).toInt();
+}
+
+void setDrawerWidth(int width)
+{
+    QSettings(settingsFile(), QSettings::IniFormat).setValue(QStringLiteral("playlist/width"), width);
 }
 
 } // namespace PlaylistSession

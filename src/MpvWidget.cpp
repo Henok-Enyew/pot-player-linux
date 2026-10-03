@@ -154,6 +154,21 @@ void MpvWidget::loadFiles(const QStringList &files, const QStringList &subtitles
         command(cmd);
 }
 
+void MpvWidget::playFiles(const QStringList &files, int start)
+{
+    if (start <= 0) {
+        loadFiles(files);
+        return;
+    }
+    m_pendingSubtitles.clear();
+    // Queue everything first, so the entries before `start` never begin playing.
+    QList<QStringList> commands{{QStringLiteral("stop")}};
+    commands.append(queueCommands(files, QStringLiteral("append")));
+    start = std::min(start, static_cast<int>(files.size()) - 1);
+    commands.append({QStringLiteral("playlist-play-index"), QString::number(start)});
+    runOrDefer(commands);
+}
+
 void MpvWidget::loadPlaylist(const QString &path)
 {
     m_pendingSubtitles.clear();
@@ -365,10 +380,13 @@ void MpvWidget::command(const QStringList &args)
 
 void MpvWidget::sendQueuedCommands()
 {
-    while (!m_commandQueue.isEmpty() && m_pendingReplies < kMaxPendingReplies) {
+    // mpv reads a playlist file in a thread of its own, so commands after a
+    // loadlist (playing an entry, moving the new ones) wait for it to finish.
+    while (!m_commandQueue.isEmpty() && m_pendingReplies < kMaxPendingReplies && !m_awaitedBatch) {
         const QueuedCommand next = m_commandQueue.takeFirst();
         if (mpvCommandAsync(m_mpv, next.args, next.reply) >= 0) {
             ++m_pendingReplies;
+            m_awaitedBatch = next.reply;
         } else if (next.reply) {
             // An invalid command; there will be no reply.
             QFile::remove(m_batchReplies.take(next.reply));
@@ -554,6 +572,8 @@ void MpvWidget::processMpvEvents()
             // mpv has read the temporary playlist.
             if (const QString batch = m_batchReplies.take(event->reply_userdata); !batch.isEmpty())
                 QFile::remove(batch);
+            if (event->reply_userdata == m_awaitedBatch)
+                m_awaitedBatch = 0;
             sendQueuedCommands();
             break;
         case MPV_EVENT_START_FILE:

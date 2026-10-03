@@ -31,5 +31,8 @@ void setRememberPlaylist(bool enabled);
 // Reopen the last entry where it was left, paused (default on).
 bool resumePlayback();
 void setResumePlayback(bool enabled);
+// Width of the playlist drawer as the user last sized it, or `defaultWidth`.
+int drawerWidth(int defaultWidth);
+void setDrawerWidth(int width);
 
 } // namespace PlaylistSession

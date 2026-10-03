@@ -1,6 +1,6 @@
 #pragma once
 
-#include "OpenSubtitlesClient.h"
+#include "SubtitleFinder.h"
 #include "SubtitleSearch.h"
 
 #include <QDialog>
@@ -14,8 +14,8 @@ class QProgressBar;
 class QPushButton;
 class QTreeWidget;
 
-// Settings for subtitle downloads: the OpenSubtitles API key and where
-// downloaded files are saved.
+// Settings for subtitle downloads: an optional OpenSubtitles API key (for
+// exact matches when the build has none) and where files are saved.
 class SubtitleSettingsDialog : public QDialog
 {
     Q_OBJECT
@@ -29,8 +29,10 @@ private:
     QCheckBox *m_besideVideo;
 };
 
-// Searches OpenSubtitles.com for subtitles to the playing file, lists the
-// results, and downloads the chosen one (Download & Apply).
+// Subtitles -> Download Subtitles...: finds subtitles for the playing file
+// without any account or key (podnapisi.net, plus OpenSubtitles' exact
+// matches when the build has a key), downloads the chosen one to
+// ~/.cache/top-player/subtitles and hands it to the player.
 class SubtitleDownloadDialog : public QDialog
 {
     Q_OBJECT
@@ -39,23 +41,27 @@ public:
     // `mediaPath` is the playing file (a path or URL); its name seeds the search.
     explicit SubtitleDownloadDialog(const QString &mediaPath, QWidget *parent = nullptr);
 
-    OpenSubtitlesClient *client() const { return m_client; }
-    const QList<OpenSubtitlesClient::Result> &results() const { return m_results; }
+    SubtitleFinder *finder() const { return m_finder; }
+    const QList<SubtitleResult> &results() const { return m_results; }
     QString movieHash() const { return m_hash; }
-    // Starts a search with the current inputs.
-    void search();
-    // Downloads the selected result, then emits subtitleDownloaded() and closes.
-    void downloadSelected();
     bool isBusy() const;
 
+public Q_SLOTS:
+    void searchByHash();
+    void searchByName();
+    // Downloads the selected result, then emits subtitleDownloaded() and closes.
+    void downloadSelected();
+
 Q_SIGNALS:
-    void subtitleDownloaded(const QString &path);
+    // `label` names it for the OSD: "English / The.Matrix.1999.srt".
+    void subtitleDownloaded(const QString &path, const QString &label);
 
 protected:
     void reject() override;
 
 private:
-    void showResults(const QList<OpenSubtitlesClient::Result> &results);
+    void search(SubtitleFinder::Mode mode);
+    void showResults(const QList<SubtitleResult> &results, const QString &note);
     void setBusy(bool busy, const QString &status = {});
     void setStatus(const QString &text, bool error = false);
     void openSettings();
@@ -64,16 +70,16 @@ private:
     QString m_mediaPath;
     SubtitleSearch::ParsedName m_parsed;
     QString m_hash;
-    OpenSubtitlesClient *m_client;
-    QList<OpenSubtitlesClient::Result> m_results;
+    SubtitleFinder *m_finder;
+    QList<SubtitleResult> m_results;
 
     QLineEdit *m_query;
     QComboBox *m_language;
-    QCheckBox *m_matchHash;
-    QPushButton *m_searchButton;
-    QPushButton *m_settingsButton;
+    QPushButton *m_hashButton;
+    QPushButton *m_nameButton;
     QProgressBar *m_progress;
     QLabel *m_status;
     QTreeWidget *m_table;
+    QPushButton *m_settingsButton;
     QPushButton *m_downloadButton;
 };

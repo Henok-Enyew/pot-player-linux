@@ -7,7 +7,7 @@
 class QPropertyAnimation;
 
 // Transparent overlay that briefly shows PotPlayer-style status text
-// (white labels, amber values) with an optional progress bar.
+// (white labels, cyan values) with an optional progress bar.
 class OsdWidget : public QWidget
 {
     Q_OBJECT

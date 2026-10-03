@@ -1,5 +1,6 @@
 #include "PlaylistController.h"
 #include "MediaFiles.h"
+#include "MediaLibrary.h"
 #include "MediaProber.h"
 #include "MpvWidget.h"
 #include "PlaylistDrawer.h"
@@ -8,6 +9,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QInputDialog>
 
 #include <algorithm>
 #include <functional>
@@ -31,6 +33,7 @@ PlaylistController::PlaylistController(MpvWidget *mpv, PlaylistDrawer *drawer, Q
     , m_drawer(drawer)
     , m_dialogParent(dialogParent)
     , m_prober(new MediaProber(this))
+    , m_library(new MediaLibrary(MediaLibrary::defaultFile(), this))
 {
     using PlaylistOps::SortKey;
     connect(m_drawer, &PlaylistDrawer::playRequested, this, [this](int index) {
@@ -54,6 +57,21 @@ PlaylistController::PlaylistController(MpvWidget *mpv, PlaylistDrawer *drawer, Q
     m_playlistTimer.setSingleShot(true);
     m_playlistTimer.setInterval(kPlaylistRefreshMs);
     connect(&m_playlistTimer, &QTimer::timeout, this, &PlaylistController::updateDrawer);
+
+    LibraryPanel *library = m_drawer->libraryPanel();
+    library->setLibrary(m_library);
+    connect(library, &LibraryPanel::playRequested, this, &PlaylistController::playFromLibrary);
+    connect(library, &LibraryPanel::queueRequested, this, &PlaylistController::queueFromLibrary);
+    connect(library, &LibraryPanel::addFolderRequested, this, &PlaylistController::addFolderToLibraryDialog);
+    connect(library, &LibraryPanel::addPlaylistFileRequested, this, &PlaylistController::addPlaylistFileToLibraryDialog);
+    connect(library, &LibraryPanel::saveQueueRequested, this, &PlaylistController::saveQueueToLibraryDialog);
+    connect(library, &LibraryPanel::overwritePlaylistRequested, this, [this](const QString &path) {
+        refresh();
+        if (m_entries.isEmpty())
+            Q_EMIT message(tr("Playlist is empty"));
+        else
+            savePlaylist(path);
+    });
 
     m_durationTimer.setSingleShot(true);
     m_durationTimer.setInterval(kDurationRefreshMs);
@@ -325,4 +343,126 @@ void PlaylistController::scheduleSave()
 {
     if (m_sessionStarted)
         m_saveTimer.start();
+}
+
+void PlaylistController::addFolderToLibraryDialog()
+{
+    const QString folder = QFileDialog::getExistingDirectory(m_dialogParent, tr("Add Folder to Library"));
+    if (folder.isEmpty())
+        return;
+    if (m_library->add(MediaLibrary::Kind::Folder, folder))
+        Q_EMIT message(tr("Added to Library"), QFileInfo(folder).fileName());
+    else
+        Q_EMIT message(tr("Already in Library"), QFileInfo(folder).fileName());
+}
+
+void PlaylistController::addPlaylistFileToLibraryDialog()
+{
+    const QStringList files = QFileDialog::getOpenFileNames(m_dialogParent, tr("Add Playlist to Library"), {},
+                                                            MediaFiles::playlistFileFilter());
+    int added = 0;
+    for (const QString &file : files)
+        added += m_library->add(MediaLibrary::Kind::Playlist, file) ? 1 : 0;
+    if (added > 0)
+        Q_EMIT message(tr("Added to Library"), tr("%n playlist(s)", nullptr, added));
+}
+
+void PlaylistController::saveQueueToLibraryDialog()
+{
+    refresh();
+    if (m_entries.isEmpty()) {
+        Q_EMIT message(tr("Playlist is empty"));
+        return;
+    }
+    // Suggest the folder the queue comes from, e.g. a season of a show.
+    QString suggestion = tr("Playlist");
+    const QString first = MediaFiles::localPath(m_entries.first().filename);
+    if (!first.isEmpty())
+        suggestion = QFileInfo(first).absoluteDir().dirName();
+    bool ok = false;
+    const QString name = QInputDialog::getText(m_dialogParent, tr("Save to Library"), tr("Playlist name:"),
+                                               QLineEdit::Normal, suggestion, &ok);
+    if (ok && !name.trimmed().isEmpty())
+        saveQueueToLibrary(name);
+}
+
+QString PlaylistController::saveQueueToLibrary(const QString &name)
+{
+    refresh();
+    if (m_entries.isEmpty()) {
+        Q_EMIT message(tr("Playlist is empty"));
+        return {};
+    }
+    QDir().mkpath(MediaLibrary::playlistsDir());
+    const QString path = MediaLibrary::newPlaylistPath(name);
+    if (!savePlaylist(path))
+        return {};
+    m_library->add(MediaLibrary::Kind::Playlist, path, name);
+    Q_EMIT message(tr("Saved to Library"), name.trimmed());
+    return path;
+}
+
+void PlaylistController::playFromLibrary(LibraryPanel::EntryType type, const QString &path, int start)
+{
+    using EntryType = LibraryPanel::EntryType;
+    switch (type) {
+    case EntryType::Folder:
+        MediaFiles::expandFoldersAsync({path}, this, [this, path](const QStringList &files) {
+            if (files.isEmpty())
+                Q_EMIT message(tr("No media files in"), QFileInfo(path).fileName());
+            else
+                m_mpv->loadFiles(files);
+        });
+        break;
+    case EntryType::Playlist:
+        if (start < 0) {
+            m_mpv->loadPlaylist(path);
+        } else {
+            const QStringList files = PlaylistOps::readPlaylist(path);
+            if (!files.isEmpty())
+                m_mpv->playFiles(files, start);
+        }
+        break;
+    case EntryType::File: {
+        // Play the file's folder from that file on, so the next episode follows.
+        const QString local = MediaFiles::localPath(path);
+        if (local.isEmpty()) {
+            m_mpv->loadFiles({path});
+            break;
+        }
+        const QFileInfo info(local);
+        MediaFiles::expandFoldersAsync({info.absolutePath()}, this, [this, path, info](const QStringList &files) {
+            const qsizetype index = files.indexOf(info.absoluteFilePath());
+            if (index < 0)
+                m_mpv->loadFiles({path});
+            else
+                m_mpv->playFiles(files, static_cast<int>(index));
+        });
+        break;
+    }
+    }
+}
+
+void PlaylistController::queueFromLibrary(LibraryPanel::EntryType type, const QString &path)
+{
+    using EntryType = LibraryPanel::EntryType;
+    switch (type) {
+    case EntryType::Folder:
+        addFolder(path);
+        break;
+    case EntryType::Playlist: {
+        const QStringList files = PlaylistOps::readPlaylist(path);
+        if (files.isEmpty()) {
+            Q_EMIT message(tr("Playlist is empty"));
+            return;
+        }
+        m_mpv->insertFiles(files);
+        Q_EMIT message(tr("Added to Playlist"), tr("%n file(s)", nullptr, static_cast<int>(files.size())));
+        break;
+    }
+    case EntryType::File:
+        m_mpv->insertFiles({path});
+        Q_EMIT message(tr("Added to Playlist"), QFileInfo(MediaFiles::localPath(path)).fileName());
+        break;
+    }
 }

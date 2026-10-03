@@ -46,4 +46,9 @@ QList<int> missingRows(const QList<Entry> &entries);
 // Writes an extended M3U playlist (UTF-8) with #EXTINF titles and durations.
 bool writeM3u(const QString &path, const QList<Entry> &entries, QString *error = nullptr);
 
+// The entries of an .m3u/.m3u8 or .pls playlist file: absolute paths for
+// local files (relative ones resolved against the playlist's folder) and URLs
+// as they are. Empty if the file can't be read.
+QStringList readPlaylist(const QString &path);
+
 } // namespace PlaylistOps

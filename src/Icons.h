@@ -7,6 +7,7 @@
 enum class IconType {
     Open, Play, Pause, Stop, Previous, Next, Playlist, Volume, Muted, Fullscreen,
     Minimize, Maximize, Restore, Close, Add, Remove, Clear, Folder, Url, Shuffle, Sort, More, Search,
+    Expand, Collapse,
 };
 
 QIcon skinIcon(IconType type);

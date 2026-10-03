@@ -5,10 +5,11 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QLocale>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QStandardPaths>
-#include <QtEndian>
 
 #ifndef TOPPLAYER_OPENSUBTITLES_API_KEY
 #define TOPPLAYER_OPENSUBTITLES_API_KEY ""
@@ -16,7 +17,6 @@
 
 namespace {
 
-constexpr qint64 kHashChunk = 64 * 1024;
 
 // Words that start the technical part of a release name.
 const QStringList kReleaseTags{
@@ -118,31 +118,70 @@ ParsedName parseFileName(const QString &path)
     return parsed;
 }
 
-QString movieHash(const QString &path)
+bool isSameRelease(const QString &release, const QString &mediaPath)
 {
-    QFile file(path);
-    const qint64 size = file.size();
-    if (size < kHashChunk || !file.open(QIODevice::ReadOnly))
-        return {};
-    quint64 hash = static_cast<quint64>(size);
-    auto addChunk = [&](qint64 offset) {
-        if (!file.seek(offset))
-            return false;
-        const QByteArray data = file.read(kHashChunk);
-        if (data.size() != kHashChunk)
-            return false;
-        for (qsizetype i = 0; i < data.size(); i += 8)
-            hash += qFromLittleEndian<quint64>(data.constData() + i);
-        return true;
+    static const QStringList subtitleSuffixes{
+        QStringLiteral("srt"), QStringLiteral("ass"), QStringLiteral("ssa"), QStringLiteral("vtt"),
+        QStringLiteral("sub"), QStringLiteral("smi"), QStringLiteral("txt"),
     };
-    if (!addChunk(0) || !addChunk(size - kHashChunk))
-        return {};
-    return QStringLiteral("%1").arg(hash, 16, 16, QLatin1Char('0'));
+    auto words = [](const QString &text) {
+        static const QRegularExpression separators(QStringLiteral("[^\\p{L}\\p{N}]+"));
+        return text.toLower().split(separators, Qt::SkipEmptyParts);
+    };
+    QString name = release;
+    if (subtitleSuffixes.contains(QFileInfo(release).suffix().toLower()))
+        name = QFileInfo(release).completeBaseName();
+    const QStringList file = words(QFileInfo(mediaPath).completeBaseName());
+    const QStringList candidate = words(name);
+    // A bare title says nothing about the release; it takes more words.
+    if (file.size() < 3 || candidate.size() < 3)
+        return false;
+    // Equal, or one has extra words at the end (a language tag, "HI", ...).
+    const qsizetype shared = std::min(file.size(), candidate.size());
+    return file.mid(0, shared) == candidate.mid(0, shared) && shared >= std::max(file.size(), candidate.size()) - 2;
+}
+
+QByteArray userAgent()
+{
+    return QByteArrayLiteral("TopPlayer/" APP_VERSION " (Linux; Qt6)");
+}
+
+QString networkErrorMessage(const QString &service, QNetworkReply *reply)
+{
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    switch (reply->error()) {
+    case QNetworkReply::HostNotFoundError:
+    case QNetworkReply::ConnectionRefusedError:
+    case QNetworkReply::RemoteHostClosedError:
+    case QNetworkReply::NetworkSessionFailedError:
+    case QNetworkReply::TemporaryNetworkFailureError:
+    case QNetworkReply::UnknownNetworkError:
+    case QNetworkReply::ProxyConnectionRefusedError:
+    case QNetworkReply::ProxyConnectionClosedError:
+    case QNetworkReply::ProxyNotFoundError:
+        return QObject::tr("Can't reach %1. Check your internet connection.").arg(service);
+    case QNetworkReply::TimeoutError:
+    case QNetworkReply::OperationCanceledError: // the transfer timeout
+    case QNetworkReply::ProxyTimeoutError:
+        return QObject::tr("%1 didn't answer in time. Try again later.").arg(service);
+    case QNetworkReply::SslHandshakeFailedError:
+        return QObject::tr("Couldn't make a secure connection to %1.").arg(service);
+    default:
+        break;
+    }
+    if (status == 429)
+        return QObject::tr("%1 is limiting requests. Try again in a minute.").arg(service);
+    if (status >= 500)
+        return QObject::tr("%1 is having problems right now (HTTP %2). Try again later.").arg(service).arg(status);
+    if (status >= 400)
+        return QObject::tr("%1 refused the request (HTTP %2).").arg(service).arg(status);
+    return QObject::tr("%1: %2").arg(service, reply->errorString());
 }
 
 const QList<Language> &languages()
 {
     static const QList<Language> list{
+        {QStringLiteral("am"), QStringLiteral("Amharic")},
         {QStringLiteral("ar"), QStringLiteral("Arabic")},
         {QStringLiteral("bg"), QStringLiteral("Bulgarian")},
         {QStringLiteral("ca"), QStringLiteral("Catalan")},
@@ -276,7 +315,7 @@ void setLanguage(const QString &code)
 
 bool saveBesideVideo()
 {
-    return QSettings(settingsFile(), QSettings::IniFormat).value(QStringLiteral("subtitles/saveBesideVideo"), true).toBool();
+    return QSettings(settingsFile(), QSettings::IniFormat).value(QStringLiteral("subtitles/saveBesideVideo"), false).toBool();
 }
 
 void setSaveBesideVideo(bool besideVideo)

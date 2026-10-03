@@ -1,6 +1,5 @@
 #include "PlayerMenu.h"
 #include "AudioController.h"
-#include "Equalizer.h"
 #include "MainWindow.h"
 #include "MpvWidget.h"
 
@@ -50,6 +49,7 @@ PlayerMenu::PlayerMenu(MpvWidget *mpv, MainWindow *window)
     buildVideoMenu();
     buildAudioMenu();
     buildSubtitleMenu();
+    buildToolsMenu();
     addSeparator();
     buildWindowMenu();
     buildHelpMenu();
@@ -107,38 +107,10 @@ void PlayerMenu::buildAudioMenu()
                QKeySequence(Qt::CTRL | Qt::Key_Comma));
     addCommand(audio, tr("Reset Audio Delay"), {QStringLiteral("set"), QStringLiteral("audio-delay"), QStringLiteral("0")});
     audio->addSeparator();
-    buildEqualizerMenu(audio);
+    addItem(audio, tr("Audio Control && Equalizer..."), [this] { m_window->openAudioControlDialog(); },
+            QKeySequence(Qt::Key_F7));
+    audio->addSeparator();
     buildVisualizationMenu(audio);
-}
-
-void PlayerMenu::buildEqualizerMenu(QMenu *audio)
-{
-    Equalizer *equalizer = m_window->equalizer();
-    QMenu *menu = audio->addMenu(tr("Equalizer"));
-    menu->setObjectName(QStringLiteral("EqualizerMenu"));
-    auto *group = new QActionGroup(menu);
-    for (const Equalizer::Preset &preset : Equalizer::presets()) {
-        QAction *action = menu->addAction(preset.name);
-        action->setCheckable(true);
-        action->setData(preset.id);
-        group->addAction(action);
-        connect(action, &QAction::triggered, this, [this, equalizer, preset] {
-            equalizer->setPreset(preset.id);
-            Q_EMIT osdRequested(tr("Equalizer"), preset.name);
-        });
-    }
-    QAction *custom = menu->addAction(tr("Custom"));
-    custom->setCheckable(true);
-    custom->setEnabled(false); // shows that the sliders match no preset
-    custom->setData(QStringLiteral("custom"));
-    group->addAction(custom);
-    menu->addSeparator();
-    addItem(menu, tr("Adjust..."), [this] { m_window->showEqualizer(); }, QKeySequence(Qt::CTRL | Qt::Key_G));
-    connect(menu, &QMenu::aboutToShow, this, [group, equalizer] {
-        const QString current = equalizer->presetId();
-        for (QAction *action : group->actions())
-            action->setChecked(action->data().toString() == current);
-    });
 }
 
 void PlayerMenu::buildVisualizationMenu(QMenu *audio)
@@ -236,6 +208,10 @@ void PlayerMenu::buildPlaybackMenu()
     addItem(this, tr("Open File..."), [this] { m_window->openFileDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_O));
     addItem(this, tr("Open Folder..."), [this] { m_window->openFolderDialog(); });
     addItem(this, tr("Open URL / Stream..."), [this] { m_window->openUrlDialog(); });
+    addItem(this, tr("Live TV && Radio..."), [this] { m_window->openLiveStreamDialog(); },
+            QKeySequence(Qt::CTRL | Qt::Key_L));
+    addItem(this, tr("Download from URL..."), [this] { m_window->openMediaDownloaderDialog(); },
+            QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D));
     addItem(this, tr("Open Playlist..."), [this] { m_window->openPlaylistDialog(); });
     addItem(this, tr("Save Playlist..."), [this] { m_window->savePlaylistDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_S));
     addSeparator();
@@ -280,8 +256,22 @@ void PlayerMenu::buildPlaybackMenu()
                QKeySequence(Qt::Key_X));
     addCommand(speed, tr("Normal Speed"), {QStringLiteral("set"), QStringLiteral("speed"), QStringLiteral("1")},
                QKeySequence(Qt::Key_Z));
-    addToggle(playback, tr("Loop File"), QStringLiteral("loop-file"), QKeySequence(Qt::CTRL | Qt::Key_L), true,
+    addToggle(playback, tr("Loop File"), QStringLiteral("loop-file"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L), true,
               QStringLiteral("inf"), QStringLiteral("no"));
+}
+
+void PlayerMenu::buildToolsMenu()
+{
+    QMenu *tools = addMenu(tr("Tools"));
+    // [ and ] alone are the subtitle delay keys, as in PotPlayer.
+    addItem(tools, tr("Set In-Point (A)"), [this] { m_window->setClipIn(); },
+            QKeySequence(Qt::CTRL | Qt::Key_BracketLeft));
+    addItem(tools, tr("Set Out-Point (B)"), [this] { m_window->setClipOut(); },
+            QKeySequence(Qt::CTRL | Qt::Key_BracketRight));
+    addItem(tools, tr("Clear In/Out Points"), [this] { m_window->clearClipRange(); });
+    tools->addSeparator();
+    addItem(tools, tr("Cut / Extract Media..."), [this] { m_window->openMediaCutterDialog(); },
+            QKeySequence(Qt::CTRL | Qt::Key_X));
 }
 
 void PlayerMenu::buildWindowMenu()

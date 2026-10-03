@@ -1,5 +1,6 @@
 #pragma once
 
+#include "LibraryPanel.h"
 #include "PlaylistOps.h"
 
 #include <QObject>
@@ -9,6 +10,7 @@
 #include <optional>
 #include <utility>
 
+class MediaLibrary;
 class MediaProber;
 class MpvWidget;
 class PlaylistDrawer;
@@ -17,7 +19,8 @@ class QWidget;
 // Carries out the playlist drawer's requests on mpv's playlist, which stays
 // the single source of truth: reordering is done with playlist-move commands
 // (like drag-and-drop), so the playing entry keeps playing. Also keeps the
-// queue saved between runs.
+// queue saved between runs, and plays and stores the library's folders and
+// playlists.
 class PlaylistController : public QObject
 {
     Q_OBJECT
@@ -56,6 +59,16 @@ public:
     // mpv's current playlist, with durations (where known) and file sizes.
     QList<PlaylistOps::Entry> entries();
 
+    MediaLibrary *library() const { return m_library; }
+    void addFolderToLibraryDialog();
+    void addPlaylistFileToLibraryDialog();
+    void saveQueueToLibraryDialog();
+    // Saves the queue as a playlist in the library. Returns its path, or an
+    // empty string if the queue is empty or can't be written.
+    QString saveQueueToLibrary(const QString &name);
+    void playFromLibrary(LibraryPanel::EntryType type, const QString &path, int start = -1);
+    void queueFromLibrary(LibraryPanel::EntryType type, const QString &path);
+
 Q_SIGNALS:
     void message(const QString &label, const QString &value = QString());
 
@@ -72,6 +85,7 @@ private:
     PlaylistDrawer *m_drawer;
     QWidget *m_dialogParent;
     MediaProber *m_prober;
+    MediaLibrary *m_library;
     QVariantList m_playlist;
     QList<PlaylistOps::Entry> m_entries;
     // A duration sort waiting for the prober to finish.

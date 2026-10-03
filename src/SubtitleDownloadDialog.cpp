@@ -1,5 +1,6 @@
 #include "SubtitleDownloadDialog.h"
 #include "MediaFiles.h"
+#include "SubtitleHasher.h"
 #include "Theme.h"
 
 #include <QApplication>
@@ -23,7 +24,7 @@
 
 namespace {
 
-enum Column { LanguageColumn, FileColumn, DownloadsColumn, RatingColumn, FormatColumn, HearingImpairedColumn, ColumnCount };
+enum Column { LanguageColumn, TitleColumn, ProviderColumn, RatingColumn, FormatColumn, ColumnCount };
 
 // Item data: the index into the results, and the value columns sort by.
 constexpr int kResultRole = Qt::UserRole;
@@ -51,6 +52,7 @@ public:
 };
 
 // Draws a rounded "pill" after the cell text, e.g. "HI" or "Exact match".
+// Draws rounded "pills" after the cell text: "Exact match", "HI", ...
 class BadgeDelegate : public QStyledItemDelegate
 {
 public:
@@ -58,33 +60,41 @@ public:
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
-        const QString badge = index.data(kBadgeRole).toString();
+        const QStringList badges = index.data(kBadgeRole).toStringList();
         QStyleOptionViewItem opt(option);
         initStyleOption(&opt, index);
+        QFont badgeFont = opt.font;
+        badgeFont.setBold(true);
         const QFontMetrics metrics(opt.font);
-        const int badgeWidth = badge.isEmpty() ? 0 : metrics.horizontalAdvance(badge) + 12;
+        const QFontMetrics badgeMetrics(badgeFont);
+        int badgesWidth = 0;
+        for (const QString &badge : badges)
+            badgesWidth += badgeMetrics.horizontalAdvance(badge) + 12 + 4;
         const QWidget *widget = opt.widget;
         QStyle *style = widget ? widget->style() : QApplication::style();
-        QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &opt, widget);
-        if (badgeWidth > 0 && !opt.text.isEmpty())
-            opt.text = metrics.elidedText(opt.text, Qt::ElideMiddle, textRect.width() - badgeWidth - 6);
+        const QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &opt, widget);
+        if (badgesWidth > 0 && !opt.text.isEmpty())
+            opt.text = metrics.elidedText(opt.text, Qt::ElideMiddle, std::max(0, textRect.width() - badgesWidth - 6));
         style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);
-        if (badge.isEmpty())
+        if (badges.isEmpty())
             return;
 
-        const int textWidth = opt.text.isEmpty() ? 0 : metrics.horizontalAdvance(opt.text) + 6;
+        int x = textRect.left() + (opt.text.isEmpty() ? 0 : metrics.horizontalAdvance(opt.text) + 6);
         const int height = metrics.height() + 2;
-        const QRect pill(textRect.left() + textWidth, textRect.center().y() - height / 2 + 1, badgeWidth, height);
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing);
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(kAccent);
-        painter->drawRoundedRect(pill, height / 2.0, height / 2.0);
-        QFont font = opt.font;
-        font.setBold(true);
-        painter->setFont(font);
-        painter->setPen(Theme::Surface);
-        painter->drawText(pill, Qt::AlignCenter, badge);
+        painter->setFont(badgeFont);
+        for (const QString &badge : badges) {
+            const QRect pill(x, textRect.center().y() - height / 2 + 1, badgeMetrics.horizontalAdvance(badge) + 12, height);
+            painter->setPen(Qt::NoPen);
+            // The match badges in the accent color; others (HI) in grey.
+            const bool match = badge != QLatin1String("HI");
+            painter->setBrush(match ? kAccent : Theme::TextDim);
+            painter->drawRoundedRect(pill, height / 2.0, height / 2.0);
+            painter->setPen(match ? Theme::Surface : Theme::TextPrimary);
+            painter->drawText(pill, Qt::AlignCenter, badge);
+            x += pill.width() + 4;
+        }
         painter->restore();
     }
 };
@@ -102,14 +112,15 @@ SubtitleSettingsDialog::SubtitleSettingsDialog(QWidget *parent)
     m_apiKey->setText(SubtitleSearch::userApiKey());
     m_apiKey->setEchoMode(QLineEdit::PasswordEchoOnEdit);
     m_apiKey->setPlaceholderText(SubtitleSearch::builtInApiKey().isEmpty()
-                                     ? tr("Required: your OpenSubtitles API key")
+                                     ? tr("Optional: for exact (hash) matches")
                                      : tr("Optional: the built-in key is used otherwise"));
     m_apiKey->setMinimumWidth(320);
     m_besideVideo->setChecked(SubtitleSearch::saveBesideVideo());
     m_besideVideo->setToolTip(tr("Otherwise, or when the video's folder is read-only, they go to %1")
                                   .arg(SubtitleSearch::cacheDir()));
 
-    auto *help = new QLabel(tr("Create a free API key at "
+    auto *help = new QLabel(tr("Searching works without a key. An OpenSubtitles key adds exact matches by "
+                               "movie hash; create one at "
                                "<a href=\"https://www.opensubtitles.com/consumers\">opensubtitles.com/consumers</a>."),
                             this);
     help->setOpenExternalLinks(true);
@@ -138,20 +149,20 @@ SubtitleDownloadDialog::SubtitleDownloadDialog(const QString &mediaPath, QWidget
     : QDialog(parent)
     , m_mediaPath(mediaPath)
     , m_parsed(SubtitleSearch::parseFileName(mediaPath))
-    , m_client(new OpenSubtitlesClient(this))
+    , m_finder(new SubtitleFinder(this))
     , m_query(new QLineEdit(this))
     , m_language(new QComboBox(this))
-    , m_matchHash(new QCheckBox(tr("Match this exact file (movie hash)"), this))
-    , m_searchButton(new QPushButton(tr("Search"), this))
-    , m_settingsButton(new QPushButton(tr("Settings..."), this))
+    , m_hashButton(new QPushButton(tr("Search by Hash (Exact Match)"), this))
+    , m_nameButton(new QPushButton(tr("Search by Name"), this))
     , m_progress(new QProgressBar(this))
     , m_status(new QLabel(this))
     , m_table(new QTreeWidget(this))
-    , m_downloadButton(new QPushButton(tr("Download && Apply"), this))
+    , m_settingsButton(new QPushButton(tr("Settings..."), this))
+    , m_downloadButton(new QPushButton(tr("Download && Play"), this))
 {
     setObjectName(QStringLiteral("SubtitleDownloadDialog"));
     setWindowTitle(tr("Download Subtitles"));
-    resize(760, 460);
+    resize(780, 460);
 
     m_query->setObjectName(QStringLiteral("SubtitleQuery"));
     m_query->setPlaceholderText(tr("Movie or show title"));
@@ -161,23 +172,20 @@ SubtitleDownloadDialog::SubtitleDownloadDialog(const QString &mediaPath, QWidget
     m_language->setObjectName(QStringLiteral("SubtitleLanguage"));
     for (const SubtitleSearch::Language &language : SubtitleSearch::languages())
         m_language->addItem(language.name, language.code);
-    m_language->addItem(tr("All Languages"), QString());
     m_language->setCurrentIndex(std::max(0, m_language->findData(SubtitleSearch::language())));
 
-    // The hash identifies the exact release, so matching subtitles are in sync.
+    // The hash identifies the exact release; files under 128 KiB have none.
     const QString local = MediaFiles::localPath(mediaPath);
     if (!local.isEmpty())
-        m_hash = SubtitleSearch::movieHash(local);
-    m_matchHash->setObjectName(QStringLiteral("SubtitleMatchHash"));
-    m_matchHash->setEnabled(!m_hash.isEmpty());
-    m_matchHash->setChecked(!m_hash.isEmpty());
-    if (!m_hash.isEmpty())
-        m_matchHash->setToolTip(tr("Movie hash %1").arg(m_hash));
-
-    m_searchButton->setObjectName(QStringLiteral("SubtitleSearchButton"));
-    m_searchButton->setAutoDefault(false);
-    m_settingsButton->setObjectName(QStringLiteral("SubtitleSettingsButton"));
-    m_settingsButton->setAutoDefault(false);
+        m_hash = SubtitleHasher::hash(local);
+    m_hashButton->setObjectName(QStringLiteral("SubtitleHashButton"));
+    m_hashButton->setAutoDefault(false);
+    m_hashButton->setEnabled(!m_hash.isEmpty());
+    m_hashButton->setToolTip(m_hash.isEmpty()
+                                 ? tr("Only local files of 128 KiB or more can be matched exactly")
+                                 : tr("Recommended: finds subtitles made for this exact file (movie hash %1)").arg(m_hash));
+    m_nameButton->setObjectName(QStringLiteral("SubtitleNameButton"));
+    m_nameButton->setAutoDefault(false);
 
     // A thin, indeterminate bar while a request runs.
     m_progress->setObjectName(QStringLiteral("SubtitleProgress"));
@@ -186,100 +194,106 @@ SubtitleDownloadDialog::SubtitleDownloadDialog(const QString &mediaPath, QWidget
     m_progress->setFixedHeight(4);
     m_progress->setVisible(false);
     m_status->setObjectName(QStringLiteral("SubtitleStatus"));
+    m_status->setWordWrap(true);
 
     m_table->setObjectName(QStringLiteral("SubtitleResults"));
     m_table->setColumnCount(ColumnCount);
-    m_table->setHeaderLabels({tr("Language"), tr("Subtitle File Name"), tr("Downloads"), tr("Rating"), tr("Format"),
-                              tr("HI")});
-    m_table->headerItem()->setToolTip(HearingImpairedColumn, tr("For the hearing impaired"));
+    m_table->setHeaderLabels({tr("Language"), tr("Subtitle Title / Release"), tr("Provider"), tr("Rating"), tr("Format")});
     m_table->setRootIsDecorated(false);
     m_table->setUniformRowHeights(true);
     m_table->setAlternatingRowColors(true);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setItemDelegate(new BadgeDelegate(m_table));
     m_table->setSortingEnabled(true);
-    m_table->sortByColumn(-1, Qt::AscendingOrder); // keep the server's order until a header is clicked
+    m_table->sortByColumn(-1, Qt::AscendingOrder); // keep the ranking until a header is clicked
     QHeaderView *header = m_table->header();
     header->setStretchLastSection(false);
     header->setSectionResizeMode(QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(FileColumn, QHeaderView::Stretch);
+    header->setSectionResizeMode(TitleColumn, QHeaderView::Stretch);
 
+    m_settingsButton->setObjectName(QStringLiteral("SubtitleSettingsButton"));
+    m_settingsButton->setAutoDefault(false);
+    m_settingsButton->setFlat(true);
     m_downloadButton->setObjectName(QStringLiteral("SubtitleDownloadButton"));
     m_downloadButton->setDefault(true);
-    auto *close = new QPushButton(tr("Close"), this);
-    close->setAutoDefault(false);
+    auto *cancel = new QPushButton(tr("Cancel"), this);
+    cancel->setObjectName(QStringLiteral("SubtitleCancelButton"));
+    cancel->setAutoDefault(false);
 
     auto *searchRow = new QHBoxLayout;
     searchRow->addWidget(m_query, 1);
     searchRow->addWidget(m_language);
-    searchRow->addWidget(m_searchButton);
-    auto *optionsRow = new QHBoxLayout;
-    optionsRow->addWidget(m_matchHash);
-    optionsRow->addStretch();
-    optionsRow->addWidget(m_settingsButton);
+    searchRow->addWidget(m_hashButton);
+    searchRow->addWidget(m_nameButton);
     auto *buttonRow = new QHBoxLayout;
-    buttonRow->addWidget(m_status, 1);
+    buttonRow->addWidget(m_settingsButton);
+    buttonRow->addStretch();
     buttonRow->addWidget(m_downloadButton);
-    buttonRow->addWidget(close);
+    buttonRow->addWidget(cancel);
 
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(searchRow);
-    layout->addLayout(optionsRow);
     layout->addWidget(m_progress);
+    layout->addWidget(m_status);
     layout->addWidget(m_table, 1);
     layout->addLayout(buttonRow);
 
-    connect(m_searchButton, &QPushButton::clicked, this, &SubtitleDownloadDialog::search);
-    connect(m_query, &QLineEdit::returnPressed, this, &SubtitleDownloadDialog::search);
+    connect(m_hashButton, &QPushButton::clicked, this, &SubtitleDownloadDialog::searchByHash);
+    connect(m_nameButton, &QPushButton::clicked, this, &SubtitleDownloadDialog::searchByName);
+    connect(m_query, &QLineEdit::returnPressed, this, &SubtitleDownloadDialog::searchByName);
     connect(m_settingsButton, &QPushButton::clicked, this, &SubtitleDownloadDialog::openSettings);
     connect(m_downloadButton, &QPushButton::clicked, this, &SubtitleDownloadDialog::downloadSelected);
-    connect(close, &QPushButton::clicked, this, &SubtitleDownloadDialog::reject);
+    connect(cancel, &QPushButton::clicked, this, &SubtitleDownloadDialog::reject);
     connect(m_table, &QTreeWidget::itemSelectionChanged, this, &SubtitleDownloadDialog::updateButtons);
     connect(m_table, &QTreeWidget::itemActivated, this, &SubtitleDownloadDialog::downloadSelected);
-    connect(m_client, &OpenSubtitlesClient::searchFinished, this, &SubtitleDownloadDialog::showResults);
-    connect(m_client, &OpenSubtitlesClient::downloadFinished, this, [this](const QString &path) {
+    connect(m_finder, &SubtitleFinder::searchFinished, this, &SubtitleDownloadDialog::showResults);
+    connect(m_finder, &SubtitleFinder::downloadFinished, this, [this](const QString &path) {
         setBusy(false);
-        Q_EMIT subtitleDownloaded(path);
+        QString label = QFileInfo(path).fileName();
+        if (QTreeWidgetItem *item = m_table->currentItem())
+            label = item->text(LanguageColumn) + QStringLiteral(" / ") + label;
+        Q_EMIT subtitleDownloaded(path, label);
         accept();
     });
-    connect(m_client, &OpenSubtitlesClient::failed, this, [this](const QString &message) {
+    connect(m_finder, &SubtitleFinder::failed, this, [this](const QString &message) {
         setBusy(false);
         setStatus(message, true);
     });
 
     updateButtons();
-    // Search right away when there is something to search for.
-    if (SubtitleSearch::apiKey().isEmpty())
-        setStatus(tr("Add your OpenSubtitles API key in Settings to search."), true);
-    else if (!m_query->text().isEmpty() || !m_hash.isEmpty())
-        QTimer::singleShot(0, this, &SubtitleDownloadDialog::search);
+    // Search right away: exactly when the file allows it, else by name.
+    if (!m_hash.isEmpty())
+        QTimer::singleShot(0, this, &SubtitleDownloadDialog::searchByHash);
+    else if (!m_query->text().isEmpty())
+        QTimer::singleShot(0, this, &SubtitleDownloadDialog::searchByName);
 }
 
 bool SubtitleDownloadDialog::isBusy() const
 {
-    return m_client->isBusy();
+    return m_finder->isBusy();
 }
 
-void SubtitleDownloadDialog::search()
+void SubtitleDownloadDialog::searchByHash()
 {
-    const QString key = SubtitleSearch::apiKey();
-    if (key.isEmpty()) {
-        setStatus(tr("Add your OpenSubtitles API key in Settings to search."), true);
-        return;
-    }
+    search(SubtitleFinder::Mode::Hash);
+}
+
+void SubtitleDownloadDialog::searchByName()
+{
+    search(SubtitleFinder::Mode::Name);
+}
+
+void SubtitleDownloadDialog::search(SubtitleFinder::Mode mode)
+{
     const QString text = m_query->text().trimmed();
-    const bool useHash = m_matchHash->isChecked() && !m_hash.isEmpty();
-    if (text.isEmpty() && !useHash) {
+    if (mode == SubtitleFinder::Mode::Name && text.isEmpty()) {
         setStatus(tr("Enter a title to search for."), true);
         return;
     }
-
-    OpenSubtitlesClient::Query query;
+    SubtitleQuery query;
     query.text = text;
-    if (const QString code = m_language->currentData().toString(); !code.isEmpty())
-        query.languages = {code};
-    if (useHash)
-        query.movieHash = m_hash;
+    query.languages = {m_language->currentData().toString()};
+    query.movieHash = mode == SubtitleFinder::Mode::Hash ? m_hash : QString();
     // The year and episode come from the file name; they don't apply to a
     // title the user typed.
     if (text == m_parsed.title) {
@@ -289,52 +303,65 @@ void SubtitleDownloadDialog::search()
     }
     SubtitleSearch::setLanguage(m_language->currentData().toString());
 
-    m_client->setApiKey(key);
     m_table->clear();
     m_results.clear();
-    setBusy(true, tr("Searching OpenSubtitles..."));
-    m_client->search(query);
+    setBusy(true, mode == SubtitleFinder::Mode::Hash ? tr("Looking for subtitles made for this file...")
+                                                     : tr("Searching for \u201c%1\u201d...").arg(text));
+    m_finder->search(mode, query, MediaFiles::localPath(m_mediaPath));
 }
 
-void SubtitleDownloadDialog::showResults(const QList<OpenSubtitlesClient::Result> &results)
+void SubtitleDownloadDialog::showResults(const QList<SubtitleResult> &results, const QString &note)
 {
     setBusy(false);
     m_results = results;
     m_table->setSortingEnabled(false);
     m_table->clear();
     for (int i = 0; i < results.size(); ++i) {
-        const OpenSubtitlesClient::Result &result = results[i];
+        const SubtitleResult &result = results[i];
         auto *item = new ResultItem(m_table);
         item->setData(0, kResultRole, i);
         item->setText(LanguageColumn, SubtitleSearch::languageName(result.language));
-        item->setText(FileColumn, result.fileName);
-        QString tip = result.release;
+        item->setText(TitleColumn, result.fileName);
+        QStringList tip;
+        if (!result.release.isEmpty() && result.release != result.fileName)
+            tip << result.release;
         if (!result.uploader.isEmpty())
-            tip += tr("\nUploaded by %1").arg(result.uploader);
+            tip << tr("Uploaded by %1").arg(result.uploader);
+        if (result.downloads > 0)
+            tip << tr("%n download(s)", nullptr, static_cast<int>(result.downloads));
         if (result.machineTranslated)
-            tip += tr("\nMachine translated");
-        item->setToolTip(FileColumn, tip.trimmed());
+            tip << tr("Machine translated");
+        QStringList badges;
         if (result.hashMatch) {
-            item->setData(FileColumn, kBadgeRole, tr("Exact match"));
-            item->setToolTip(FileColumn, tr("Made for this exact file, so it is in sync.\n") + tip.trimmed());
+            badges << tr("Exact match");
+            tip.prepend(tr("Made for this exact file, so it is in sync."));
+        } else if (result.releaseMatch) {
+            badges << tr("Release match");
+            tip.prepend(tr("Named like your file, so it is likely in sync."));
         }
-        item->setText(DownloadsColumn, QLocale().toString(result.downloads));
-        item->setData(DownloadsColumn, kSortRole, result.downloads);
-        item->setTextAlignment(DownloadsColumn, Qt::AlignRight | Qt::AlignVCenter);
+        if (result.hearingImpaired) {
+            badges << QStringLiteral("HI");
+            tip << tr("For the hearing impaired");
+        }
+        item->setData(TitleColumn, kBadgeRole, badges);
+        item->setToolTip(TitleColumn, tip.join(QLatin1Char('\n')));
+        item->setText(ProviderColumn, result.provider);
         item->setText(RatingColumn, result.rating > 0 ? QString::number(result.rating, 'f', 1) : QStringLiteral("–"));
         item->setData(RatingColumn, kSortRole, result.rating);
         item->setTextAlignment(RatingColumn, Qt::AlignCenter);
         item->setText(FormatColumn, QLatin1Char('.') + result.format);
         item->setTextAlignment(FormatColumn, Qt::AlignCenter);
-        if (result.hearingImpaired)
-            item->setData(HearingImpairedColumn, kBadgeRole, QStringLiteral("HI"));
-        item->setData(HearingImpairedColumn, kSortRole, result.hearingImpaired ? 1 : 0);
     }
     m_table->setSortingEnabled(true);
     if (m_table->topLevelItemCount() > 0)
         m_table->setCurrentItem(m_table->topLevelItem(0));
-    setStatus(results.isEmpty() ? tr("No subtitles found. Try another title or language.")
-                                : tr("%n subtitle(s) found", nullptr, static_cast<int>(results.size())));
+
+    QString status = results.isEmpty()
+        ? tr("No subtitles found in %1. Try another title or language.").arg(m_language->currentText())
+        : tr("%n subtitle(s) found", nullptr, static_cast<int>(results.size()));
+    if (!note.isEmpty())
+        status = note + QLatin1Char(' ') + status;
+    setStatus(status, results.isEmpty());
     updateButtons();
 }
 
@@ -346,19 +373,18 @@ void SubtitleDownloadDialog::downloadSelected()
     const int index = item->data(0, kResultRole).toInt();
     if (index < 0 || index >= m_results.size())
         return;
-    const OpenSubtitlesClient::Result &result = m_results[index];
-    const QString path = SubtitleSearch::savePath(MediaFiles::localPath(m_mediaPath), result.language, result.format,
-                                                  SubtitleSearch::saveBesideVideo());
-    m_client->setApiKey(SubtitleSearch::apiKey());
+    const SubtitleResult &result = m_results[index];
+    const QString path = SubtitleSearch::savePath(MediaFiles::localPath(m_mediaPath), result.language.toLower(),
+                                                  result.format, SubtitleSearch::saveBesideVideo());
     setBusy(true, tr("Downloading %1...").arg(result.fileName));
-    m_client->download(result, path);
+    m_finder->download(result, path);
 }
 
 void SubtitleDownloadDialog::reject()
 {
-    // Esc first stops a running request, then closes.
+    // Esc or Cancel first stops a running request, then closes.
     if (isBusy()) {
-        m_client->cancel();
+        m_finder->cancel();
         setBusy(false);
         setStatus(tr("Cancelled."));
         return;
@@ -371,7 +397,8 @@ void SubtitleDownloadDialog::setBusy(bool busy, const QString &status)
     m_progress->setVisible(busy);
     m_query->setEnabled(!busy);
     m_language->setEnabled(!busy);
-    m_searchButton->setEnabled(!busy);
+    m_hashButton->setEnabled(!busy && !m_hash.isEmpty());
+    m_nameButton->setEnabled(!busy);
     m_settingsButton->setEnabled(!busy);
     m_table->setEnabled(!busy);
     if (!status.isEmpty())
@@ -390,8 +417,7 @@ void SubtitleDownloadDialog::setStatus(const QString &text, bool error)
 void SubtitleDownloadDialog::openSettings()
 {
     SubtitleSettingsDialog settings(this);
-    if (settings.exec() == QDialog::Accepted && !SubtitleSearch::apiKey().isEmpty() && m_results.isEmpty())
-        search();
+    settings.exec();
 }
 
 void SubtitleDownloadDialog::updateButtons()

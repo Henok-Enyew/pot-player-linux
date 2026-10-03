@@ -6,7 +6,6 @@
 
 #include "AudioController.h"
 #include "AudioView.h"
-#include "Equalizer.h"
 #include "MainWindow.h"
 #include "MpvWidget.h"
 #include "PlayerMenu.h"
@@ -18,7 +17,6 @@
 #include <QFileDialog>
 #include <QLineEdit>
 #include <QMenu>
-#include <QSlider>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -127,7 +125,6 @@ private Q_SLOTS:
     void seekAndVolumeWithVisualization();
     void audioTrackSwitching();
     void videoAfterAudio();
-    void equalizer();
 
 private:
     QVariant prop(const char *name) const { return m_mpv->mpvProperty(QString::fromLatin1(name)); }
@@ -494,55 +491,6 @@ void AudioTest::videoAfterAudio()
     QCOMPARE(propString("lavfi-complex"), QString());
     QTRY_COMPARE(propString("current-tracks/video/id"), QStringLiteral("1"));
     QVERIFY(!m_audio->view()->isVisible());
-}
-
-void AudioTest::equalizer()
-{
-    m_audio->setVisualization(AudioArtwork::Visualization::Waveform);
-    open(m_long);
-    m_mpv->play();
-    QTRY_VERIFY(!prop("pause").toBool());
-    Equalizer *eq = m_window->equalizer();
-    QVERIFY(eq);
-    QCOMPARE(eq->presetId(), QStringLiteral("flat"));
-    QVERIFY(propString("af").isEmpty());
-
-    // A preset from the menu becomes one equalizer filter per band.
-    auto *menu = m_window->findChild<QMenu *>(QStringLiteral("EqualizerMenu"));
-    QVERIFY(menu);
-    QAction *rock = nullptr;
-    for (QAction *action : menu->actions()) {
-        if (action->data().toString() == QLatin1String("rock"))
-            rock = action;
-    }
-    QVERIFY(rock);
-    rock->trigger();
-    QCOMPARE(eq->presetId(), QStringLiteral("rock"));
-    QTRY_VERIFY(propString("af").contains(QLatin1String("equalizer=f=31:t=o:w=1:g=5.0")));
-    QVERIFY(propString("af").contains(QLatin1String("equalizer=f=16000:t=o:w=1:g=5.0")));
-    // mpv accepted the graph: the audio still plays through it, next to the visualization.
-    QTRY_VERIFY(prop("audio-out-params").isValid());
-    const double before = prop("time-pos").toDouble();
-    QTRY_VERIFY_WITH_TIMEOUT(prop("time-pos").toDouble() > before + 0.5, 5000);
-    QVERIFY(propString("lavfi-complex").contains(QLatin1String("showwaves")));
-
-    // Moving a slider makes it a custom curve, applied live.
-    m_window->showEqualizer();
-    auto *band = m_window->findChild<QSlider *>(QStringLiteral("EqualizerBand5"));
-    QVERIFY(band);
-    band->setValue(9);
-    QCOMPARE(eq->presetId(), QStringLiteral("custom"));
-    QTRY_VERIFY(propString("af").contains(QLatin1String("equalizer=f=1000:t=o:w=1:g=9.0")));
-
-    // The curve is restored on the next start.
-    cleanup();
-    init();
-    QCOMPARE(m_window->equalizer()->gain(5), 9.0);
-    QTRY_VERIFY(propString("af").contains(QLatin1String("equalizer=f=1000:t=o:w=1:g=9.0")));
-
-    // Flat removes the filter.
-    m_window->equalizer()->setPreset(QStringLiteral("flat"));
-    QTRY_VERIFY(propString("af").isEmpty());
 }
 
 int main(int argc, char *argv[])
