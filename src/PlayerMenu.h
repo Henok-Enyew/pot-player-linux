@@ -39,6 +39,8 @@ private:
     void buildAudioMenu();
     // Audio -> Visualizations, and the custom artwork items.
     void buildVisualizationMenu(QMenu *audio);
+    // Audio -> Equalizer: presets, and the sliders.
+    void buildEqualizerMenu(QMenu *audio);
     void buildSubtitleMenu();
     void buildPlaybackMenu();
     void buildWindowMenu();

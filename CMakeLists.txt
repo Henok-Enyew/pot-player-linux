@@ -49,6 +49,10 @@ add_library(top-player-core OBJECT
     src/ControlBar.h
     src/EmptyStateWidget.cpp
     src/EmptyStateWidget.h
+    src/Equalizer.cpp
+    src/Equalizer.h
+    src/EqualizerDialog.cpp
+    src/EqualizerDialog.h
     src/Icons.cpp
     src/Icons.h
     src/MainWindow.cpp

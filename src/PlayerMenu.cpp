@@ -1,5 +1,6 @@
 #include "PlayerMenu.h"
 #include "AudioController.h"
+#include "Equalizer.h"
 #include "MainWindow.h"
 #include "MpvWidget.h"
 
@@ -106,7 +107,38 @@ void PlayerMenu::buildAudioMenu()
                QKeySequence(Qt::CTRL | Qt::Key_Comma));
     addCommand(audio, tr("Reset Audio Delay"), {QStringLiteral("set"), QStringLiteral("audio-delay"), QStringLiteral("0")});
     audio->addSeparator();
+    buildEqualizerMenu(audio);
     buildVisualizationMenu(audio);
+}
+
+void PlayerMenu::buildEqualizerMenu(QMenu *audio)
+{
+    Equalizer *equalizer = m_window->equalizer();
+    QMenu *menu = audio->addMenu(tr("Equalizer"));
+    menu->setObjectName(QStringLiteral("EqualizerMenu"));
+    auto *group = new QActionGroup(menu);
+    for (const Equalizer::Preset &preset : Equalizer::presets()) {
+        QAction *action = menu->addAction(preset.name);
+        action->setCheckable(true);
+        action->setData(preset.id);
+        group->addAction(action);
+        connect(action, &QAction::triggered, this, [this, equalizer, preset] {
+            equalizer->setPreset(preset.id);
+            Q_EMIT osdRequested(tr("Equalizer"), preset.name);
+        });
+    }
+    QAction *custom = menu->addAction(tr("Custom"));
+    custom->setCheckable(true);
+    custom->setEnabled(false); // shows that the sliders match no preset
+    custom->setData(QStringLiteral("custom"));
+    group->addAction(custom);
+    menu->addSeparator();
+    addItem(menu, tr("Adjust..."), [this] { m_window->showEqualizer(); }, QKeySequence(Qt::CTRL | Qt::Key_G));
+    connect(menu, &QMenu::aboutToShow, this, [group, equalizer] {
+        const QString current = equalizer->presetId();
+        for (QAction *action : group->actions())
+            action->setChecked(action->data().toString() == current);
+    });
 }
 
 void PlayerMenu::buildVisualizationMenu(QMenu *audio)

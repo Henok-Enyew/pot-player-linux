@@ -3,6 +3,8 @@
 #include "AudioController.h"
 #include "ControlBar.h"
 #include "EmptyStateWidget.h"
+#include "Equalizer.h"
+#include "EqualizerDialog.h"
 #include "MediaFiles.h"
 #include "MpvWidget.h"
 #include "OsdWidget.h"
@@ -112,6 +114,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Stacked over the video in creation order: the audio view, then the start
     // screen, then the OSD on top.
     m_audio = new AudioController(m_mpv, this);
+    m_equalizer = new Equalizer(m_mpv, this);
     m_emptyState = new EmptyStateWidget(m_mpv);
     m_osd = new OsdWidget(m_mpv);
     m_menu = new PlayerMenu(m_mpv, this);
@@ -386,6 +389,18 @@ void MainWindow::openSubtitleDownloadDialog()
         m_osd->showValue(tr("Subtitle loaded:"), QFileInfo(file).fileName());
     });
     dialog->open();
+}
+
+void MainWindow::showEqualizer()
+{
+    if (m_equalizerDialog) {
+        m_equalizerDialog->raise();
+        m_equalizerDialog->activateWindow();
+        return;
+    }
+    m_equalizerDialog = new EqualizerDialog(m_equalizer, this);
+    m_equalizerDialog->setAttribute(Qt::WA_DeleteOnClose);
+    m_equalizerDialog->show();
 }
 
 void MainWindow::showAbout()

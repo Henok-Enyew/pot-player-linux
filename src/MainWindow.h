@@ -11,6 +11,8 @@ class AboutDialog;
 class AudioController;
 class ControlBar;
 class EmptyStateWidget;
+class Equalizer;
+class EqualizerDialog;
 class MpvWidget;
 class OsdWidget;
 class PlayerMenu;
@@ -45,6 +47,9 @@ public:
     bool startSession(bool restore);
     PlaylistController *playlist() const { return m_playlist; }
     AudioController *audio() const { return m_audio; }
+    Equalizer *equalizer() const { return m_equalizer; }
+    // Audio -> Equalizer -> Custom...
+    void showEqualizer();
     void loadSubtitle(const QString &path);
     // Opens the OpenSubtitles search for the playing file.
     void openSubtitleDownloadDialog();
@@ -101,6 +106,8 @@ private:
     PlaylistDrawer *m_drawer = nullptr;
     PlaylistController *m_playlist = nullptr;
     AudioController *m_audio = nullptr;
+    Equalizer *m_equalizer = nullptr;
+    QPointer<EqualizerDialog> m_equalizerDialog;
     ThumbnailGenerator *m_thumbnails = nullptr;
     ThumbnailPopup *m_thumbnailPopup = nullptr;
     QWidget *m_root = nullptr;
