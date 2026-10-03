@@ -172,6 +172,11 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_mpv, &MpvWidget::fileStarted, m_emptyState, [this] { m_emptyState->setActive(false); });
     connect(m_mpv, &MpvWidget::fileFailed, this, &MainWindow::onFileFailed);
     connect(m_controlBar, &ControlBar::fullScreenRequested, this, &MainWindow::toggleFullScreen);
+    connect(m_titleBar, &TitleBar::fullScreenRequested, this, &MainWindow::toggleFullScreen);
+    connect(m_titleBar, &TitleBar::pinToggled, this, [this](bool onTop) {
+        setAlwaysOnTop(onTop);
+        m_osd->showValue(tr("Always on Top"), onTop ? tr("On") : tr("Off"));
+    });
     connect(m_controlBar, &ControlBar::playlistToggled, this, &MainWindow::setPlaylistVisible);
     connect(m_controlBar, &ControlBar::message, m_osd,
             [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
@@ -221,6 +226,7 @@ void MainWindow::setupPlaylist()
     connect(m_playlist, &PlaylistController::message, m_osd,
             [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
     connect(m_drawer, &PlaylistDrawer::openPlaylistRequested, this, &MainWindow::openPlaylistDialog);
+    connect(m_drawer, &PlaylistDrawer::openFolderRequested, this, &MainWindow::openFolderDialog);
     connect(m_drawer, &PlaylistDrawer::expandedChanged, m_controlBar, &ControlBar::setPlaylistChecked);
     connect(m_drawer, &PlaylistDrawer::expandedChanged, this, [this](bool expanded) {
         // Don't leave the keyboard on a list that is going away.
@@ -661,6 +667,9 @@ void MainWindow::exitFullScreen()
 void MainWindow::setAlwaysOnTop(bool onTop)
 {
     // Changing window flags hides the window, so restore its geometry and show it again.
+    m_titleBar->setPinned(onTop);
+    if (windowFlags().testFlag(Qt::WindowStaysOnTopHint) == onTop)
+        return;
     const QRect geometry = this->geometry();
     setWindowFlag(Qt::WindowStaysOnTopHint, onTop);
     setGeometry(geometry);
@@ -767,6 +776,10 @@ void MainWindow::updateChrome()
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    // This sees every event of the application; let the rest through at once.
+    const QEvent::Type type = event->type();
+    if (type != QEvent::ShortcutOverride && type != QEvent::KeyPress && type != QEvent::MouseMove)
+        return QMainWindow::eventFilter(watched, event);
     // A shortcut fires unless the focused widget claims the key first. Let a
     // focused list (the playlist) keep its navigation keys, so Up/Down move the
     // selection instead of changing the volume.

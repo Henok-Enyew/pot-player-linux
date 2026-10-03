@@ -57,6 +57,8 @@ public:
     void sort(PlaylistOps::SortKey key, bool ascending);
     void reverse();
     void shuffle();
+    // The move buttons: shifts the entries at `rows`.
+    void shiftRows(const QList<int> &rows, PlaylistOps::Shift shift);
     void removeRows(QList<int> rows);
     void clear();
     void removeMissing();
@@ -102,6 +104,8 @@ private:
     QList<PlaylistOps::Entry> m_entries;
     // A duration sort waiting for the prober to finish.
     std::optional<std::pair<PlaylistOps::SortKey, bool>> m_pendingSort;
+    // The files last handed to the prober.
+    QStringList m_probedFiles;
     QTimer m_durationTimer;
     // Coalesces playlist reports, so a burst of changes rebuilds the drawer once.
     QTimer m_playlistTimer;

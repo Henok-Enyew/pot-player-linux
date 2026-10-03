@@ -29,34 +29,26 @@ QLabel {
 /* ---- Title bar ---------------------------------------------------------- */
 
 #TitleBar {
-    background: #121316;
-    border-bottom: 1px solid #2a2d35;
-    min-height: 28px;
-    max-height: 28px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #17191e, stop: 1 #121316);
+    border-bottom: 1px solid #23262d;
+    min-height: 32px;
+    max-height: 32px;
 }
 
 #AppNameLabel {
     color: #00d2ff;
     font-weight: bold;
+    letter-spacing: 0.3px;
 }
 
 #TitleLabel {
     color: #a0a5b5;
 }
 
+/* The window buttons paint their own animated highlight. */
 #TitleBar QToolButton {
     border: none;
-    border-radius: 0;
-    min-width: 40px;
-    min-height: 28px;
-}
-
-#TitleBar QToolButton:hover {
-    background: #2a2e38;
-}
-
-#TitleBar QToolButton#CloseButton:hover {
-    background: #c42b1c;
+    background: transparent;
 }
 
 /* ---- Control bar -------------------------------------------------------- */
@@ -299,7 +291,7 @@ QTabBar#PlaylistTabs::tab {
     color: #a0a5b5;
     border: none;
     border-bottom: 2px solid transparent;
-    padding: 4px 8px;
+    padding: 6px 12px;
     font-weight: bold;
 }
 
@@ -336,7 +328,7 @@ QListWidget#PlaylistView {
 }
 
 QListWidget#PlaylistView::item {
-    padding: 5px 10px;
+    padding: 6px 10px;
     border: none;
 }
 
@@ -347,6 +339,49 @@ QListWidget#PlaylistView::item:hover {
 QListWidget#PlaylistView::item:selected {
     background: #10303a;
     color: #ffffff;
+}
+
+/* PotPlayer's bottom bar: move buttons and ADD / DEL / SORT chips. */
+#PlaylistActionBar, #LibraryActionBar {
+    background: #15171c;
+    border-top: 1px solid #2a2d35;
+}
+
+#PlaylistActionBar QToolButton[barButton="true"], #LibraryActionBar QToolButton[barButton="true"] {
+    background: #262931;
+    color: #c9cdd8;
+    border: 1px solid #30343d;
+    border-radius: 4px;
+    padding: 3px 6px;
+    min-height: 16px;
+}
+
+#PlaylistActionBar QToolButton[barButton="true"]:disabled, #LibraryActionBar QToolButton[barButton="true"]:disabled {
+    color: #5a5f6b;
+    background: #1e2026;
+    border-color: #262931;
+}
+
+#PlaylistActionBar QToolButton[barIcon="true"], #LibraryActionBar QToolButton[barIcon="true"] {
+    padding: 3px 4px;
+}
+
+#PlaylistActionBar QToolButton[barButton="true"]:hover, #LibraryActionBar QToolButton[barButton="true"]:hover {
+    background: #2f3440;
+    color: #ffffff;
+    border-color: #00d2ff;
+}
+
+#PlaylistActionBar QToolButton[barButton="true"]:pressed, #LibraryActionBar QToolButton[barButton="true"]:pressed,
+#PlaylistActionBar QToolButton[barButton="true"]:open, #LibraryActionBar QToolButton[barButton="true"]:open {
+    background: #10303a;
+    color: #00d2ff;
+    border-color: #00d2ff;
+}
+
+#PlaylistActionBar QToolButton::menu-indicator, #LibraryActionBar QToolButton::menu-indicator {
+    image: none;
+    width: 0;
 }
 
 QTreeWidget#LibraryView {

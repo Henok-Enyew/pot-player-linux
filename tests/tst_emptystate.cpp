@@ -241,7 +241,7 @@ void EmptyStateTest::openFileButton()
     QStringList filters;
     whenDialogOpens<QFileDialog>([&](QFileDialog *dialog) {
         filters = dialog->nameFilters();
-        dialog->selectFile(m_clip);
+        chooseInDialog(dialog, m_clip);
         static_cast<QDialog *>(dialog)->accept(); // public in QDialog, protected in QFileDialog
     });
     QTest::mouseClick(button("OpenFileButton"), Qt::LeftButton);
@@ -260,7 +260,7 @@ void EmptyStateTest::openFolderButton()
     whenDialogOpens<QFileDialog>([&](QFileDialog *dialog) {
         directoryMode = dialog->fileMode() == QFileDialog::Directory;
         dialog->setDirectory(m_dir.path());
-        dialog->selectFile(folder);
+        chooseInDialog(dialog, folder);
         static_cast<QDialog *>(dialog)->accept();
     });
     QTest::mouseClick(button("OpenFolderButton"), Qt::LeftButton);
@@ -293,7 +293,7 @@ void EmptyStateTest::openPlaylistButton()
     QStringList filters;
     whenDialogOpens<QFileDialog>([&](QFileDialog *dialog) {
         filters = dialog->nameFilters();
-        dialog->selectFile(playlist);
+        chooseInDialog(dialog, playlist);
         static_cast<QDialog *>(dialog)->accept();
     });
     QTest::mouseClick(button("OpenPlaylistButton"), Qt::LeftButton);

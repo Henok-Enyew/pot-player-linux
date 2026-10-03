@@ -23,6 +23,8 @@ finish-args:
   - --filesystem=host:ro
   # Screenshots (Ctrl+E) are saved to ~/Pictures.
   - --filesystem=xdg-pictures
+  # MPRIS, so the media keys and the desktop's media controls reach the player.
+  - --own-name=org.mpris.MediaPlayer2.top_player
 cleanup:
   - '*.a'
   - '*.la'

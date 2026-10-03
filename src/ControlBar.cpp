@@ -290,8 +290,11 @@ void ControlBar::updatePlayButton()
 
 void ControlBar::updateTimeLabel()
 {
-    m_timeLabel->setText(QStringLiteral("<span style='color:%1'>%2</span>"
+    // Rich text is laid out again on every change: only when a second ticks over.
+    const QString text = QStringLiteral("<span style='color:%1'>%2</span>"
                                         "<span style='color:%3'> / %4</span>")
                              .arg(Theme::hex(Theme::Accent), formatTime(m_position),
-                                  Theme::hex(Theme::TextSecondary), formatTime(m_duration)));
+                                  Theme::hex(Theme::TextSecondary), formatTime(m_duration));
+    if (text != m_timeLabel->text())
+        m_timeLabel->setText(text);
 }

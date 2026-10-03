@@ -87,6 +87,9 @@ private Q_SLOTS:
     void sortByPathAndSize();
     void reverseOrder();
     void shuffle();
+    void shiftOrder();
+    void moveButtons();
+    void playingEntryUpdatesInPlace();
     void filterKeepsPlaylist();
     void filteredMove();
     void removeMissingAndDuplicates();
@@ -266,12 +269,12 @@ void PlaylistTest::addFolderButton()
     whenDialogOpens<QFileDialog>([&](QFileDialog *dialog) {
         directoryMode = dialog->fileMode() == QFileDialog::Directory;
         dialog->setDirectory(m_dir.path());
-        dialog->selectFile(m_show);
+        chooseInDialog(dialog, m_show);
         static_cast<QDialog *>(dialog)->accept(); // public in QDialog, protected in QFileDialog
     });
-    auto *button = m_drawer->findChild<QToolButton *>(QStringLiteral("PlaylistAddFolderButton"));
-    QVERIFY(button);
-    QTest::mouseClick(button, Qt::LeftButton);
+    // ADD > Add Folder..., at the bottom of the playlist as in PotPlayer.
+    QVERIFY(m_drawer->findChild<QToolButton *>(QStringLiteral("PlaylistAddButton")));
+    triggerMenuAction("PlaylistAddMenu", QStringLiteral("Add Folder..."));
     QVERIFY(directoryMode);
     QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), m_expected, 10000);
     QTRY_COMPARE(viewFiles(), m_expected);
@@ -280,6 +283,69 @@ void PlaylistTest::addFolderButton()
     // Adding again appends instead of replacing.
     m_window->playlist()->addFolder(m_show + QStringLiteral("/Extras"));
     QTRY_COMPARE(mpvFiles(), m_expected + QStringList{m_expected.last()});
+}
+
+void PlaylistTest::shiftOrder()
+{
+    using PlaylistOps::Shift;
+    QList<int> rows;
+    QCOMPARE(PlaylistOps::shiftOrder(5, {2, 4}, Shift::Top, &rows), (QList<int>{2, 4, 0, 1, 3}));
+    QCOMPARE(rows, (QList<int>{0, 1}));
+    QCOMPARE(PlaylistOps::shiftOrder(5, {0, 2}, Shift::Bottom, &rows), (QList<int>{1, 3, 4, 0, 2}));
+    QCOMPARE(rows, (QList<int>{3, 4}));
+    // A row already at the top stays; the one below it still moves up.
+    QCOMPARE(PlaylistOps::shiftOrder(5, {0, 3}, Shift::Up, &rows), (QList<int>{0, 1, 3, 2, 4}));
+    QCOMPARE(rows, (QList<int>{0, 2}));
+    QCOMPARE(PlaylistOps::shiftOrder(5, {0, 1}, Shift::Up, &rows), (QList<int>{0, 1, 2, 3, 4}));
+    QCOMPARE(PlaylistOps::shiftOrder(5, {1, 2}, Shift::Down, &rows), (QList<int>{0, 3, 1, 2, 4}));
+    QCOMPARE(rows, (QList<int>{2, 3}));
+    QCOMPARE(PlaylistOps::shiftOrder(5, {4}, Shift::Down, &rows), (QList<int>{0, 1, 2, 3, 4}));
+    QCOMPARE(rows, QList<int>{4});
+}
+
+void PlaylistTest::moveButtons()
+{
+    load(m_expected);
+    const auto clickMove = [this](const char *name) {
+        auto *button = m_drawer->findChild<QToolButton *>(QString::fromLatin1(name));
+        QVERIFY2(button, name);
+        QTest::mouseClick(button, Qt::LeftButton);
+    };
+    m_view->clearSelection();
+    m_view->item(3)->setSelected(true);
+    clickMove("PlaylistMoveUpButton");
+    QStringList expected = m_expected;
+    expected.move(3, 2);
+    QTRY_COMPARE(mpvFiles(), expected);
+    QTRY_COMPARE(viewFiles(), expected);
+    // The moved entry stays selected, so the button can be pressed again.
+    QTRY_COMPARE(m_view->selectedItems().size(), 1);
+    QCOMPARE(m_view->row(m_view->selectedItems().first()), 2);
+    clickMove("PlaylistMoveTopButton");
+    expected.move(2, 0);
+    QTRY_COMPARE(mpvFiles(), expected);
+    QTRY_COMPARE(viewFiles(), expected);
+    QTRY_COMPARE(m_view->row(m_view->selectedItems().value(0)), 0);
+    clickMove("PlaylistMoveBottomButton");
+    expected.move(0, expected.size() - 1);
+    QTRY_COMPARE(mpvFiles(), expected);
+    QTRY_COMPARE(viewFiles(), expected);
+    clickMove("PlaylistMoveDownButton"); // already at the bottom
+    QTest::qWait(200);
+    QCOMPARE(mpvFiles(), expected);
+}
+
+void PlaylistTest::playingEntryUpdatesInPlace()
+{
+    // Only the playing entry changes: the rows are updated, not rebuilt.
+    load(m_expected);
+    QListWidgetItem *first = m_view->item(0);
+    QVERIFY(first->font().bold());
+    m_mpv->command({QStringLiteral("playlist-play-index"), QStringLiteral("2")});
+    QTRY_VERIFY(m_view->item(2)->font().bold());
+    QCOMPARE(m_view->item(0), first);
+    QVERIFY(!first->font().bold());
+    QCOMPARE(viewFiles(), m_expected);
 }
 
 void PlaylistTest::sortByName()
@@ -517,7 +583,7 @@ void PlaylistTest::openPlaylistKeepsTitlesAndSkipsMissing()
     // Through the menu's dialog, like a user.
     whenDialogOpens<QFileDialog>([&](QFileDialog *dialog) {
         QVERIFY(dialog->acceptMode() == QFileDialog::AcceptOpen);
-        dialog->selectFile(path);
+        chooseInDialog(dialog, path);
         static_cast<QDialog *>(dialog)->accept();
     });
     m_window->openPlaylistDialog();
@@ -663,7 +729,7 @@ void PlaylistTest::savePlaylistDialogAddsSuffix()
     whenDialogOpens<QFileDialog>([&](QFileDialog *dialog) {
         QVERIFY(dialog->acceptMode() == QFileDialog::AcceptSave);
         dialog->selectNameFilter(dialog->nameFilters().value(1)); // plain .m3u
-        dialog->selectFile(m_dir.filePath(QStringLiteral("mylist")));
+        chooseInDialog(dialog, m_dir.filePath(QStringLiteral("mylist")));
         static_cast<QDialog *>(dialog)->accept();
     });
     triggerMenuAction("PlaylistMoreMenu", QStringLiteral("Save Playlist..."));

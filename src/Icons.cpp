@@ -94,19 +94,54 @@ void drawIcon(QPainter &p, IconType type)
         p.drawPolyline(QPolygonF({{16.5, 12.5}, {16.5, 16.5}, {12.5, 16.5}}));
         p.drawPolyline(QPolygonF({{7.5, 16.5}, {3.5, 16.5}, {3.5, 12.5}}));
         break;
+    // The window controls: thin, centered glyphs, as on current desktops.
     case IconType::Minimize:
-        p.drawLine(QPointF(5, 13), QPointF(15, 13));
+        p.setPen(QPen(color, 1.3, Qt::SolidLine, Qt::RoundCap));
+        p.drawLine(QPointF(5.5, 10.5), QPointF(14.5, 10.5));
         break;
     case IconType::Maximize:
-        p.drawRect(QRectF(5, 5, 10, 10));
+        p.setPen(QPen(color, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.drawRoundedRect(QRectF(5.5, 5.5, 9, 9), 2, 2);
         break;
-    case IconType::Restore:
-        p.drawRect(QRectF(4.5, 7.5, 8, 8));
-        p.drawPolyline(QPolygonF({{7.5, 7.5}, {7.5, 4.5}, {15.5, 4.5}, {15.5, 12.5}, {12.5, 12.5}}));
+    case IconType::Restore: {
+        p.setPen(QPen(color, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.drawRoundedRect(QRectF(5, 7.5, 7.5, 7.5), 1.8, 1.8);
+        QPainterPath back;
+        back.moveTo(7.5, 5.5);
+        back.lineTo(13, 5.5);
+        back.quadTo(15, 5.5, 15, 7.5);
+        back.lineTo(15, 13);
+        p.drawPath(back);
         break;
+    }
     case IconType::Close:
-        p.drawLine(QPointF(5, 5), QPointF(15, 15));
-        p.drawLine(QPointF(15, 5), QPointF(5, 15));
+        p.setPen(QPen(color, 1.3, Qt::SolidLine, Qt::RoundCap));
+        p.drawLine(QPointF(6, 6), QPointF(14, 14));
+        p.drawLine(QPointF(14, 6), QPointF(6, 14));
+        break;
+    case IconType::Pin:
+        // A pushpin, tilted: head, body and needle.
+        p.setPen(QPen(color, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.drawPath(polygon({{11, 3.5}, {16.5, 9}, {14.5, 9.8}, {12, 12.3}, {11.6, 15}, {5, 8.4}, {7.7, 8}, {10.2, 5.5}}));
+        p.drawLine(QPointF(8.3, 11.7), QPointF(4, 16));
+        break;
+    case IconType::MoveTop:
+        p.drawLine(QPointF(4.5, 4), QPointF(15.5, 4));
+        p.drawPolyline(QPolygonF({{5.5, 12}, {10, 7.5}, {14.5, 12}}));
+        p.drawLine(QPointF(10, 7.5), QPointF(10, 16.5));
+        break;
+    case IconType::MoveUp:
+        p.drawPolyline(QPolygonF({{5, 10}, {10, 5}, {15, 10}}));
+        p.drawLine(QPointF(10, 5), QPointF(10, 16));
+        break;
+    case IconType::MoveDown:
+        p.drawPolyline(QPolygonF({{5, 10}, {10, 15}, {15, 10}}));
+        p.drawLine(QPointF(10, 4), QPointF(10, 15));
+        break;
+    case IconType::MoveBottom:
+        p.drawLine(QPointF(4.5, 16), QPointF(15.5, 16));
+        p.drawPolyline(QPolygonF({{5.5, 8}, {10, 12.5}, {14.5, 8}}));
+        p.drawLine(QPointF(10, 3.5), QPointF(10, 12.5));
         break;
     case IconType::Add:
         p.drawLine(QPointF(10, 4), QPointF(10, 16));
@@ -218,9 +253,14 @@ QPixmap renderIcon(IconType type, const QColor &color)
 
 QIcon skinIcon(IconType type)
 {
+    return skinIcon(type, kActiveColor);
+}
+
+QIcon skinIcon(IconType type, const QColor &hoverColor)
+{
     QIcon icon;
     icon.addPixmap(renderIcon(type, kNormalColor), QIcon::Normal);
-    icon.addPixmap(renderIcon(type, kActiveColor), QIcon::Active);
+    icon.addPixmap(renderIcon(type, hoverColor), QIcon::Active);
     icon.addPixmap(renderIcon(type, kDisabledColor), QIcon::Disabled);
     const QPixmap on = renderIcon(type, Theme::Accent);
     icon.addPixmap(on, QIcon::Normal, QIcon::On);

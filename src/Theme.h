@@ -3,6 +3,8 @@
 #include <QColor>
 
 class QApplication;
+class QToolButton;
+class QWidget;
 
 // Top Player palette, shared by the QSS skin (resources/skin/top-player.qss)
 // and the widgets that paint themselves.
@@ -21,6 +23,10 @@ inline constexpr QColor TextDim{0x6B, 0x70, 0x80};
 
 // "#rrggbb", for rich text.
 inline QString hex(const QColor &color) { return color.name(QColor::HexRgb); }
+
+// A text button for the bars along the bottom of the playlist and library
+// ("ADD", "DEL", ...), styled as chips by the skin.
+QToolButton *barButton(QWidget *parent, const QString &text, const QString &toolTip, const char *objectName);
 
 } // namespace Theme
 

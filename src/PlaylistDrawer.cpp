@@ -19,6 +19,7 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QPropertyAnimation>
+#include <QSet>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
 #include <QTabBar>
@@ -41,7 +42,12 @@ const QColor kDurationColor = Theme::TextSecondary;
 // Item data: the entry's filename, and its duration text.
 constexpr int kFilenameRole = Qt::UserRole;
 constexpr int kDurationRole = Qt::UserRole + 1;
+// Set on the entry that is playing.
+constexpr int kPlayingRole = Qt::UserRole + 2;
+// mpv's id of the entry, which stays with it when the playlist is reordered.
+constexpr int kIdRole = Qt::UserRole + 3;
 constexpr int kDurationGap = 8;
+constexpr int kPlayingBarWidth = 3;
 
 // Dropped files, folders and URLs, without subtitle files. Folders are
 // expanded later, off the GUI thread.
@@ -88,11 +94,15 @@ public:
             opt.text = opt.fontMetrics.elidedText(opt.text, opt.textElideMode, textRect.width() - durationWidth);
         }
         style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);
+        if (index.data(kPlayingRole).toBool()) {
+            // An accent bar along the left edge marks the entry that is playing.
+            painter->fillRect(QRect(opt.rect.left(), opt.rect.top() + 3, kPlayingBarWidth, opt.rect.height() - 6), kPlayingColor);
+        }
         if (duration.isEmpty())
             return;
         painter->save();
         const bool selected = opt.state & QStyle::State_Selected;
-        painter->setPen(selected ? opt.palette.color(QPalette::HighlightedText) : kDurationColor);
+        painter->setPen(selected ? Theme::TextPrimary : kDurationColor);
         painter->setFont(opt.font);
         painter->drawText(textRect, Qt::AlignRight | Qt::AlignVCenter, duration);
         painter->restore();
@@ -307,50 +317,34 @@ PlaylistDrawer::PlaylistDrawer(QWidget *parent)
     header->addSpacing(2);
     header->addWidget(m_countLabel);
     header->addStretch();
+    QToolButton *more = makeButton(IconType::More, tr("More"), "PlaylistMenuButton");
+    more->setMenu(m_moreMenu);
+    more->setPopupMode(QToolButton::InstantPopup);
+    more->setProperty("hideMenuIndicator", true);
+    header->addWidget(more);
     m_wideButton = makeButton(IconType::Expand, tr("Expand Playlist"), "PlaylistExpandButton");
     header->addWidget(m_wideButton);
 
-    // The playlist's editing buttons.
-    auto *edit = new QHBoxLayout;
-    edit->setContentsMargins(8, 2, 6, 2);
-    edit->setSpacing(2);
-    QToolButton *add = makeButton(IconType::Add, tr("Add Files..."), "PlaylistAddButton");
-    QToolButton *addFolder = makeButton(IconType::Folder, tr("Add Folder..."), "PlaylistAddFolderButton");
-    QToolButton *remove = makeButton(IconType::Remove, tr("Remove Selected (Del)"), "PlaylistRemoveButton");
-    QToolButton *clear = makeButton(IconType::Clear, tr("Clear Playlist"), "PlaylistClearButton");
-    for (QToolButton *button : {add, addFolder, remove, clear})
-        edit->addWidget(button);
-    edit->addStretch();
-
-    // Search field and the arranging buttons.
+    // Search field, with shuffle beside it.
     auto *tools = new QHBoxLayout;
-    tools->setContentsMargins(8, 2, 6, 6);
-    tools->setSpacing(2);
+    tools->setContentsMargins(8, 4, 6, 6);
+    tools->setSpacing(4);
     m_filter->setObjectName(QStringLiteral("PlaylistFilter"));
     m_filter->setPlaceholderText(tr("Search playlist"));
     m_filter->setClearButtonEnabled(true);
     m_filter->addAction(skinIcon(IconType::Search), QLineEdit::LeadingPosition);
     m_filter->installEventFilter(this);
     QToolButton *shuffle = makeButton(IconType::Shuffle, tr("Shuffle"), "PlaylistShuffleButton");
-    QToolButton *sort = makeButton(IconType::Sort, tr("Sort"), "PlaylistSortButton");
-    QToolButton *more = makeButton(IconType::More, tr("More"), "PlaylistMenuButton");
-    sort->setMenu(m_sortMenu);
-    more->setMenu(m_moreMenu);
-    for (QToolButton *button : {sort, more}) {
-        button->setPopupMode(QToolButton::InstantPopup);
-        button->setProperty("hideMenuIndicator", true);
-    }
-    for (QToolButton *button : {shuffle, sort, more})
-        edit->addWidget(button);
     tools->addWidget(m_filter, 1);
+    tools->addWidget(shuffle);
 
     auto *playlistPage = new QWidget(this);
     auto *playlistLayout = new QVBoxLayout(playlistPage);
     playlistLayout->setContentsMargins(0, 0, 0, 0);
     playlistLayout->setSpacing(0);
-    playlistLayout->addLayout(edit);
     playlistLayout->addLayout(tools);
     playlistLayout->addWidget(m_view, 1);
+    playlistLayout->addWidget(buildActionBar());
     m_pages->addWidget(playlistPage);
     m_pages->addWidget(m_library);
 
@@ -366,9 +360,10 @@ PlaylistDrawer::PlaylistDrawer(QWidget *parent)
     layout->addWidget(new ResizeHandle(this));
     layout->addLayout(content, 1);
 
-    connect(m_tabs, &QTabBar::currentChanged, this, [this](int index) {
+    connect(m_tabs, &QTabBar::currentChanged, this, [this, more](int index) {
         m_pages->setCurrentIndex(index);
         m_countLabel->setVisible(index == PlaylistPage);
+        more->setVisible(index == PlaylistPage);
     });
     connect(m_wideButton, &QToolButton::clicked, this, [this] { setWide(!m_wide); });
     // Follow the window's width while open, e.g. to stay wide.
@@ -382,15 +377,7 @@ PlaylistDrawer::PlaylistDrawer(QWidget *parent)
     connect(m_view, &PlaylistView::removeRequested, this, &PlaylistDrawer::removeRequested);
     connect(m_view, &QWidget::customContextMenuRequested, this, &PlaylistDrawer::showContextMenu);
     connect(m_filter, &QLineEdit::textChanged, this, &PlaylistDrawer::applyFilter);
-    connect(add, &QToolButton::clicked, this, &PlaylistDrawer::addRequested);
-    connect(addFolder, &QToolButton::clicked, this, &PlaylistDrawer::addFolderRequested);
-    connect(clear, &QToolButton::clicked, this, &PlaylistDrawer::clearRequested);
     connect(shuffle, &QToolButton::clicked, this, &PlaylistDrawer::shuffleRequested);
-    connect(remove, &QToolButton::clicked, this, [this] {
-        const QList<int> rows = m_view->selectedVisibleRows();
-        if (!rows.isEmpty())
-            Q_EMIT removeRequested(rows);
-    });
 
     m_animation->setDuration(kAnimationMs);
     m_animation->setEasingCurve(QEasingCurve::OutCubic);
@@ -425,6 +412,33 @@ void PlaylistDrawer::buildMenus()
     m_sortMenu->addAction(tr("Reverse Order"), this, &PlaylistDrawer::reverseRequested);
     m_sortMenu->addAction(skinIcon(IconType::Shuffle), tr("Shuffle"), this, &PlaylistDrawer::shuffleRequested);
 
+    m_addMenu = new QMenu(tr("Add"), this);
+    m_addMenu->setObjectName(QStringLiteral("PlaylistAddMenu"));
+    m_addMenu->addAction(skinIcon(IconType::Add), tr("Add Files..."), this, &PlaylistDrawer::addRequested);
+    m_addMenu->addAction(skinIcon(IconType::Folder), tr("Add Folder..."), this, &PlaylistDrawer::addFolderRequested);
+    m_addMenu->addAction(skinIcon(IconType::Url), tr("Add URL..."), this, &PlaylistDrawer::addUrlRequested);
+    m_addMenu->addSeparator();
+    // Opening replaces the playlist, adding keeps it: PotPlayer has both.
+    m_addMenu->addAction(skinIcon(IconType::Open), tr("Open Folder (Replace Playlist)..."), this, &PlaylistDrawer::openFolderRequested);
+    m_addMenu->addAction(tr("Open Playlist..."), this, &PlaylistDrawer::openPlaylistRequested);
+
+    m_deleteMenu = new QMenu(tr("Delete"), this);
+    m_deleteMenu->setObjectName(QStringLiteral("PlaylistDeleteMenu"));
+    QAction *removeSelected = m_deleteMenu->addAction(skinIcon(IconType::Remove), tr("Remove Selected"), this, [this] {
+        const QList<int> rows = m_view->selectedVisibleRows();
+        if (!rows.isEmpty())
+            Q_EMIT removeRequested(rows);
+    });
+    removeSelected->setShortcut(QKeySequence(Qt::Key_Delete));
+    removeSelected->setShortcutContext(Qt::WidgetShortcut); // the list handles Del itself
+    m_deleteMenu->addAction(tr("Remove Missing/Inaccessible Files"), this, &PlaylistDrawer::removeMissingRequested);
+    m_deleteMenu->addAction(tr("Remove Duplicates"), this, &PlaylistDrawer::removeDuplicatesRequested);
+    m_deleteMenu->addSeparator();
+    m_deleteMenu->addAction(skinIcon(IconType::Clear), tr("Clear Playlist"), this, &PlaylistDrawer::clearRequested);
+    connect(m_deleteMenu, &QMenu::aboutToShow, this, [this, removeSelected] {
+        removeSelected->setEnabled(!m_view->selectedVisibleRows().isEmpty());
+    });
+
     m_moreMenu = new QMenu(this);
     m_moreMenu->setObjectName(QStringLiteral("PlaylistMoreMenu"));
     m_moreMenu->addAction(tr("Open Playlist..."), this, &PlaylistDrawer::openPlaylistRequested);
@@ -445,6 +459,51 @@ void PlaylistDrawer::buildMenus()
         m_resumeAction->setEnabled(on);
     });
     connect(m_resumeAction, &QAction::triggered, this, &PlaylistSession::setResumePlayback);
+}
+
+QWidget *PlaylistDrawer::buildActionBar()
+{
+    auto *bar = new QFrame(this);
+    bar->setObjectName(QStringLiteral("PlaylistActionBar"));
+    auto *layout = new QHBoxLayout(bar);
+    layout->setContentsMargins(6, 5, 6, 6);
+    layout->setSpacing(2);
+
+    const auto moveButton = [this, bar](IconType icon, const QString &toolTip, const char *name, PlaylistOps::Shift shift) {
+        auto *button = new QToolButton(bar);
+        button->setObjectName(QString::fromLatin1(name));
+        button->setProperty("barButton", true);
+        button->setProperty("barIcon", true);
+        button->setIcon(skinIcon(icon));
+        button->setIconSize(QSize(12, 12));
+        button->setToolTip(toolTip);
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setAutoRepeat(shift == PlaylistOps::Shift::Up || shift == PlaylistOps::Shift::Down);
+        connect(button, &QToolButton::clicked, this, [this, shift] {
+            const QList<int> rows = m_view->selectedVisibleRows();
+            if (!rows.isEmpty())
+                Q_EMIT shiftRequested(rows, shift);
+        });
+        return button;
+    };
+    using PlaylistOps::Shift;
+    layout->addWidget(moveButton(IconType::MoveTop, tr("Move to Top"), "PlaylistMoveTopButton", Shift::Top));
+    layout->addWidget(moveButton(IconType::MoveUp, tr("Move Up"), "PlaylistMoveUpButton", Shift::Up));
+    layout->addWidget(moveButton(IconType::MoveDown, tr("Move Down"), "PlaylistMoveDownButton", Shift::Down));
+    layout->addWidget(moveButton(IconType::MoveBottom, tr("Move to Bottom"), "PlaylistMoveBottomButton", Shift::Bottom));
+    layout->addStretch();
+
+    const auto textButton = [bar](const QString &text, const QString &toolTip, const char *name, QMenu *menu) {
+        QToolButton *button = Theme::barButton(bar, text, toolTip, name);
+        button->setMenu(menu);
+        button->setPopupMode(QToolButton::InstantPopup);
+        button->setProperty("hideMenuIndicator", true);
+        return button;
+    };
+    layout->addWidget(textButton(tr("ADD"), tr("Add files, folders or URLs"), "PlaylistAddButton", m_addMenu));
+    layout->addWidget(textButton(tr("DEL"), tr("Remove entries"), "PlaylistRemoveButton", m_deleteMenu));
+    layout->addWidget(textButton(tr("SORT"), tr("Sort the playlist"), "PlaylistSortButton", m_sortMenu));
+    return bar;
 }
 
 void PlaylistDrawer::syncOptions()
@@ -469,8 +528,14 @@ void PlaylistDrawer::showContextMenu(const QPoint &pos)
     remove->setShortcut(QKeySequence(Qt::Key_Delete));
     remove->setEnabled(!rows.isEmpty());
     menu.addSeparator();
-    menu.addAction(skinIcon(IconType::Add), tr("Add Files..."), this, &PlaylistDrawer::addRequested);
-    menu.addAction(skinIcon(IconType::Folder), tr("Add Folder..."), this, &PlaylistDrawer::addFolderRequested);
+    if (!rows.isEmpty()) {
+        using PlaylistOps::Shift;
+        menu.addAction(skinIcon(IconType::MoveTop), tr("Move to Top"), this, [this, rows] { Q_EMIT shiftRequested(rows, Shift::Top); });
+        menu.addAction(skinIcon(IconType::MoveBottom), tr("Move to Bottom"), this, [this, rows] { Q_EMIT shiftRequested(rows, Shift::Bottom); });
+    }
+    menu.addSeparator();
+    for (QAction *action : m_addMenu->actions())
+        menu.addAction(action);
     menu.addSeparator();
     menu.addMenu(m_sortMenu)->setIcon(skinIcon(IconType::Sort));
     menu.addSeparator();
@@ -515,8 +580,54 @@ bool PlaylistDrawer::eventFilter(QObject *watched, QEvent *event)
     return QFrame::eventFilter(watched, event);
 }
 
+bool PlaylistDrawer::updateEntriesInPlace(const QVariantList &playlist)
+{
+    if (playlist.size() != m_view->count())
+        return false;
+    for (int i = 0; i < playlist.size(); ++i) {
+        const QVariantMap entry = playlist[i].toMap();
+        const QListWidgetItem *item = m_view->item(i);
+        if (item->data(kIdRole) != entry.value(QStringLiteral("id"))
+            || item->data(kFilenameRole).toString() != entry.value(QStringLiteral("filename")).toString())
+            return false;
+    }
+    // Same files in the same order (the usual change: the next entry starts
+    // playing). Touch only what differs, keeping selection and scroll position.
+    for (int i = 0; i < playlist.size(); ++i) {
+        const QVariantMap entry = playlist[i].toMap();
+        QListWidgetItem *item = m_view->item(i);
+        const QString filename = entry.value(QStringLiteral("filename")).toString();
+        const QString text = QStringLiteral("%1. %2").arg(i + 1).arg(
+            PlaylistOps::displayName({filename, entry.value(QStringLiteral("title")).toString()}));
+        if (item->text() != text)
+            item->setText(text);
+        const bool playing = entry.value(QStringLiteral("current")).toBool();
+        if (item->data(kPlayingRole).toBool() != playing) {
+            QFont font = m_view->font();
+            font.setBold(playing);
+            item->setFont(font);
+            item->setData(Qt::ForegroundRole, playing ? QVariant(kPlayingColor) : QVariant());
+            item->setData(kPlayingRole, playing);
+        }
+    }
+    return true;
+}
+
 void PlaylistDrawer::setEntries(const QVariantList &playlist, const QList<double> &durations)
 {
+    if (updateEntriesInPlace(playlist)) {
+        setDurations(durations);
+        applyFilter();
+        return;
+    }
+    // Entries keep their selection when the playlist is reordered (e.g. by
+    // the move buttons), so they can be moved again right away.
+    QSet<qlonglong> selectedIds;
+    for (const QListWidgetItem *item : m_view->selectedItems()) {
+        if (item->data(kIdRole).isValid())
+            selectedIds.insert(item->data(kIdRole).toLongLong());
+    }
+    const QVariant currentId = m_view->currentItem() ? m_view->currentItem()->data(kIdRole) : QVariant();
     const int previousRow = m_view->currentRow();
     // Rebuild in one go: no repaints in between, and each item is complete
     // before it is added, so the view hears of it once.
@@ -532,16 +643,34 @@ void PlaylistDrawer::setEntries(const QVariantList &playlist, const QList<double
         auto *item = new QListWidgetItem(QStringLiteral("%1. %2").arg(i + 1).arg(name));
         item->setToolTip(filename);
         item->setData(kFilenameRole, filename);
+        item->setData(kIdRole, entry.value(QStringLiteral("id")));
         if (i < durations.size())
             item->setData(kDurationRole, durationText(durations[i]));
         if (entry.value(QStringLiteral("current")).toBool()) {
             item->setFont(playingFont);
             item->setForeground(kPlayingColor);
+            item->setData(kPlayingRole, true);
         }
         m_view->addItem(item);
     }
-    if (previousRow >= 0 && previousRow < m_view->count())
-        m_view->setCurrentRow(previousRow, QItemSelectionModel::NoUpdate);
+    int currentRow = -1;
+    if (!selectedIds.isEmpty() || currentId.isValid()) {
+        for (int row = 0; row < m_view->count(); ++row) {
+            QListWidgetItem *item = m_view->item(row);
+            const QVariant id = item->data(kIdRole);
+            if (id.isValid() && selectedIds.contains(id.toLongLong()))
+                item->setSelected(true);
+            if (id.isValid() && id == currentId)
+                currentRow = row;
+        }
+    }
+    if (currentRow < 0 && previousRow >= 0 && previousRow < m_view->count())
+        currentRow = previousRow;
+    if (currentRow >= 0) {
+        m_view->setCurrentRow(currentRow, QItemSelectionModel::NoUpdate);
+        if (!selectedIds.isEmpty())
+            m_view->scrollToItem(m_view->item(currentRow));
+    }
     applyFilter();
     m_view->setUpdatesEnabled(true);
 }

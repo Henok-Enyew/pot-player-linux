@@ -49,6 +49,8 @@ PlaylistController::PlaylistController(MpvWidget *mpv, PlaylistDrawer *drawer, Q
     connect(m_drawer, &PlaylistDrawer::filesDropped, this, &PlaylistController::addEntries);
     connect(m_drawer, &PlaylistDrawer::addRequested, this, &PlaylistController::addFilesDialog);
     connect(m_drawer, &PlaylistDrawer::addFolderRequested, this, &PlaylistController::addFolderDialog);
+    connect(m_drawer, &PlaylistDrawer::addUrlRequested, this, &PlaylistController::addUrlDialog);
+    connect(m_drawer, &PlaylistDrawer::shiftRequested, this, &PlaylistController::shiftRows);
     connect(m_drawer, &PlaylistDrawer::clearRequested, this, &PlaylistController::clear);
     connect(m_drawer, &PlaylistDrawer::sortRequested, this, &PlaylistController::sort);
     connect(m_drawer, &PlaylistDrawer::reverseRequested, this, &PlaylistController::reverse);
@@ -119,7 +121,11 @@ void PlaylistController::updateDrawer()
     files.reserve(m_entries.size());
     for (const PlaylistOps::Entry &entry : std::as_const(m_entries))
         files.append(entry.filename);
-    m_prober->probe(files);
+    // Most reports only move the playing entry; the files are probed already.
+    if (files != m_probedFiles) {
+        m_prober->probe(files);
+        m_probedFiles = files;
+    }
     scheduleSave();
 }
 
@@ -373,6 +379,13 @@ void PlaylistController::reverse()
     QList<int> order(m_entries.size());
     std::iota(order.rbegin(), order.rend(), 0);
     applyOrder(order);
+}
+
+void PlaylistController::shiftRows(const QList<int> &rows, PlaylistOps::Shift shift)
+{
+    refresh();
+    // The drawer keeps the moved entries selected (it follows mpv's entry ids).
+    applyOrder(PlaylistOps::shiftOrder(static_cast<int>(m_entries.size()), rows, shift));
 }
 
 void PlaylistController::shuffle()
