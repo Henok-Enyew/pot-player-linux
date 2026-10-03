@@ -9,6 +9,7 @@
 #include "PlaylistController.h"
 #include "PlaylistDrawer.h"
 #include "SeekBar.h"
+#include "SubtitleDownloadDialog.h"
 #include "ThumbnailGenerator.h"
 #include "ThumbnailPopup.h"
 #include "TitleBar.h"
@@ -349,6 +350,33 @@ void MainWindow::loadSubtitle(const QString &path)
 {
     m_mpv->addSubtitle(path);
     m_osd->showValue(tr("Subtitle Loaded"), QFileInfo(path).fileName());
+}
+
+void MainWindow::openSubtitleDownloadDialog()
+{
+    const QString path = m_mpv->isIdle() ? QString() : m_mpv->mpvPropertyString(QStringLiteral("path"));
+    if (path.isEmpty()) {
+        m_osd->showValue(tr("Open a video to download subtitles for"));
+        return;
+    }
+    auto *dialog = new SubtitleDownloadDialog(path, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &SubtitleDownloadDialog::subtitleDownloaded, this, [this, path](const QString &file) {
+        // The video may have changed while the dialog was open.
+        if (m_mpv->mpvPropertyString(QStringLiteral("path")) != path)
+            return;
+        m_mpv->addSubtitle(file);
+        // A subtitle the user just asked for should show even if subtitles were hidden.
+        m_mpv->setMpvProperty(QStringLiteral("sub-visibility"), QStringLiteral("yes"));
+        m_osd->showValue(tr("Subtitle loaded:"), QFileInfo(file).fileName());
+    });
+    dialog->open();
+}
+
+void MainWindow::openSubtitleSettingsDialog()
+{
+    SubtitleSettingsDialog dialog(this);
+    dialog.exec();
 }
 
 void MainWindow::toggleFullScreen()

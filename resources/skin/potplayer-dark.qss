@@ -310,3 +310,47 @@ QToolTip {
     border: 1px solid #3a3a3a;
     padding: 3px 6px;
 }
+
+/* ---- Subtitle download dialog ------------------------------------------- */
+
+QTreeWidget#SubtitleResults {
+    background: #181818;
+    alternate-background-color: #1d1d1d;
+    color: #d6d6d6;
+    border: 1px solid #2a2a2a;
+    outline: none;
+}
+
+QTreeWidget#SubtitleResults::item {
+    padding: 5px 6px;
+    border: none;
+}
+
+QTreeWidget#SubtitleResults::item:hover {
+    background: #242424;
+}
+
+QTreeWidget#SubtitleResults::item:selected {
+    background: #33302a;
+    color: #ffffff;
+}
+
+QTreeWidget#SubtitleResults QHeaderView::section {
+    background: #222222;
+    color: #9a9a9a;
+    border: none;
+    border-right: 1px solid #2a2a2a;
+    border-bottom: 1px solid #2a2a2a;
+    padding: 5px 6px;
+}
+
+QProgressBar#SubtitleProgress {
+    background: #262626;
+    border: none;
+    border-radius: 2px;
+}
+
+QProgressBar#SubtitleProgress::chunk {
+    background: #ffb41e;
+    border-radius: 2px;
+}

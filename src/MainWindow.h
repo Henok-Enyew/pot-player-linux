@@ -42,6 +42,9 @@ public:
     PlaylistController *playlist() const { return m_playlist; }
     AudioController *audio() const { return m_audio; }
     void loadSubtitle(const QString &path);
+    // Opens the OpenSubtitles search for the playing file.
+    void openSubtitleDownloadDialog();
+    void openSubtitleSettingsDialog();
     void toggleFullScreen();
     void setAlwaysOnTop(bool onTop);
     // Resizes the window so the video shows at `scale` times its display size.

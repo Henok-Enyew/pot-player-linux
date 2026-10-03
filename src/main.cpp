@@ -3,6 +3,7 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QNetworkProxyFactory>
 #include <QSurfaceFormat>
 
 #include <clocale>
@@ -18,6 +19,8 @@ int main(int argc, char *argv[])
     // libmpv requires the C numeric locale; QApplication may have changed it.
     std::setlocale(LC_NUMERIC, "C");
     applyDarkSkin(app);
+    // Subtitle downloads go through the desktop's proxy settings ($https_proxy, ...).
+    QNetworkProxyFactory::setUseSystemConfiguration(true);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("A lightweight media player for Linux"));

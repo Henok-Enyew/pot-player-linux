@@ -166,6 +166,10 @@ void PlayerMenu::buildSubtitleMenu()
             m_window->loadSubtitle(file);
     });
 
+    addItem(subs, tr("Download Subtitles..."), [this] { m_window->openSubtitleDownloadDialog(); },
+            QKeySequence(Qt::Key_D));
+    addItem(subs, tr("Subtitle Download Settings..."), [this] { m_window->openSubtitleSettingsDialog(); });
+
     // Delay and position changes are observed by MainWindow, which shows the OSD.
     subs->addSeparator();
     const QString delay = QStringLiteral("sub-delay");
@@ -354,7 +358,8 @@ QMenu *PlayerMenu::addTrackMenu(QMenu *menu, const QString &title, const QString
             QAction *action = submenu->addAction(label);
             action->setCheckable(true);
             action->setChecked(value == current);
-            action->setEnabled(value != taken);
+            // "Off" may be chosen in both slots.
+            action->setEnabled(value == QLatin1String("no") || value != taken);
             group->addAction(action);
             connect(action, &QAction::triggered, this, [this, title, property, label, value, audio] {
                 if (audio)

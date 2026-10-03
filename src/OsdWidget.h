@@ -21,6 +21,9 @@ public:
     // Shows "<position> / <duration>" with a seek bar.
     void showTime(double position, double duration);
 
+    // The text shown last, e.g. "Volume 65%".
+    QString text() const;
+
     qreal opacity() const { return m_opacity; }
     void setOpacity(qreal opacity);
 

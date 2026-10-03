@@ -140,6 +140,24 @@ When a file opens, the window resizes to 100% of the video resolution
 - **Dual subtitles:** pick a **Secondary Subtitle Track** (mpv's
   `secondary-sid`) to show a second language at the top of the frame while
   the primary track stays at the bottom.
+- **Download subtitles** (`D`, or **Subtitles > Download Subtitles...**)
+  searches [OpenSubtitles.com](https://www.opensubtitles.com). The search is
+  filled in from the file name ("The.Matrix.1999.1080p.BluRay.mkv" becomes
+  *The Matrix*, 1999; "Show.S01E02" becomes season 1, episode 2), in your
+  system language, and with the file's
+  [movie hash](https://trac.opensubtitles.org/projects/opensubtitles/wiki/HashSourceCodes)
+  so subtitles made for this exact release are listed first as **Exact
+  match**. Type another title, pick another language, or click a column to
+  sort. **Download & Apply** (or double-click) saves the file next to the
+  video as `<video>.<language>.srt` (or in
+  `~/.cache/potplayer-linux/subtitles/` if that folder is read-only, or if
+  you choose so in the settings), loads it, selects it and shows it. `Esc`
+  stops a running search.
+- OpenSubtitles needs an API key: create a free one at
+  [opensubtitles.com/consumers](https://www.opensubtitles.com/consumers) and
+  enter it under **Subtitles > Subtitle Download Settings...** (also the
+  **Settings...** button in the dialog). Release builds may include a
+  default key; yours takes precedence.
 
 | Input | Action |
 | --- | --- |
@@ -157,6 +175,7 @@ When a file opens, the window resizes to 100% of the video resolution
 | `Ctrl+.` / `Ctrl+,` | Audio delay +/- 0.1 s |
 | `Alt+L` / `Alt+Shift+L` | Next subtitle / next secondary subtitle |
 | `Alt+H` / `Alt+Shift+H` | Show / hide subtitles / secondary subtitles |
+| `D` | Download subtitles |
 | `Alt+Up` / `Alt+Down` | Move subtitles up / down |
 | `Alt+PgUp` / `Alt+PgDn` | Subtitle size |
 | `Ctrl+D` | Deinterlace |
@@ -185,7 +204,7 @@ that was playing.
 
 | Format | Recipe | Build locally |
 | --- | --- | --- |
-| AppImage | [`packaging/appimage/build-appimage.sh`](packaging/appimage/build-appimage.sh) (linuxdeploy + linuxdeploy-plugin-qt) | `VERSION=0.1.0 packaging/appimage/build-appimage.sh` (also needs `qmake6`, optionally `qt6-wayland`) |
+| AppImage | [`packaging/appimage/build-appimage.sh`](packaging/appimage/build-appimage.sh) (linuxdeploy + linuxdeploy-plugin-qt) | `VERSION=0.2.0 packaging/appimage/build-appimage.sh` (also needs `qmake6`, optionally `qt6-wayland`) |
 | Flatpak | [`org.github.potlinux.yaml`](org.github.potlinux.yaml) (KDE 6.11 runtime, builds libmpv) | `flatpak-builder --user --install --force-clean build-flatpak org.github.potlinux.yaml` |
 | RPM | [`packaging/rpm/pot-player.spec`](packaging/rpm/pot-player.spec) | see the comment at the top of the spec |
 
@@ -199,7 +218,13 @@ publishes a GitHub Release with the packages and a `SHA256SUMS` file:
    add a `<release>` entry to
    [`packaging/linux/org.github.potlinux.metainfo.xml`](packaging/linux/org.github.potlinux.metainfo.xml)
    and commit.
-2. `git tag v0.1.0 && git push origin v0.1.0`
+2. `git tag v0.2.0 && git push origin v0.2.0`
+
+To build in a default OpenSubtitles API key, add it as the repository secret
+`OPENSUBTITLES_API_KEY`; the workflow passes it to all three builds (locally:
+set `$OPENSUBTITLES_API_KEY`, or put the key in an untracked
+`opensubtitles-api-key.txt`, before running CMake). Without one, users enter
+their own key.
 
 A tag with a suffix such as `v0.2.0-rc1` is published as a pre-release.
 

@@ -50,6 +50,14 @@ void OsdWidget::showValue(const QString &label, const QString &value, qreal prog
     showSegments(segments, progress);
 }
 
+QString OsdWidget::text() const
+{
+    QString result;
+    for (const Segment &segment : m_segments)
+        result += segment.text;
+    return result;
+}
+
 void OsdWidget::showTime(double position, double duration)
 {
     QList<Segment> segments{{formatTime(position), true}};

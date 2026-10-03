@@ -48,6 +48,10 @@ if compgen -G "$("$QMAKE" -query QT_INSTALL_PLUGINS)/platforms/libqwayland-*.so"
     # (shell integration, decorations, EGL graphics integration).
     export EXTRA_QT_MODULES="waylandcompositor"
 fi
+# HTTPS for subtitle downloads: Qt loads its TLS backend as a plugin.
+if [[ -d "$("$QMAKE" -query QT_INSTALL_PLUGINS)/tls" ]]; then
+    export EXTRA_QT_PLUGINS="tls;networkinformation"
+fi
 export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
 
 cd "$WORK"
