@@ -5,7 +5,6 @@
 #include "PlaylistDrawer.h"
 #include "PlaylistSession.h"
 
-#include <QApplication>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -18,6 +17,8 @@ namespace {
 
 // Duration labels are refreshed in batches while the prober works through a folder.
 constexpr int kDurationRefreshMs = 150;
+// The drawer follows mpv's playlist this long after its last change.
+constexpr int kPlaylistRefreshMs = 30;
 constexpr int kSaveDelayMs = 1000;
 // While playing, the position is saved this often in case the player is killed.
 constexpr int kPositionSaveMs = 30000;
@@ -39,8 +40,7 @@ PlaylistController::PlaylistController(MpvWidget *mpv, PlaylistDrawer *drawer, Q
         m_mpv->command({QStringLiteral("playlist-move"), QString::number(from), QString::number(to)});
     });
     connect(m_drawer, &PlaylistDrawer::removeRequested, this, &PlaylistController::removeRows);
-    connect(m_drawer, &PlaylistDrawer::filesDropped, this,
-            [this](const QStringList &files, int row) { m_mpv->insertFiles(files, row); });
+    connect(m_drawer, &PlaylistDrawer::filesDropped, this, &PlaylistController::addEntries);
     connect(m_drawer, &PlaylistDrawer::addRequested, this, &PlaylistController::addFilesDialog);
     connect(m_drawer, &PlaylistDrawer::addFolderRequested, this, &PlaylistController::addFolderDialog);
     connect(m_drawer, &PlaylistDrawer::clearRequested, this, &PlaylistController::clear);
@@ -50,6 +50,10 @@ PlaylistController::PlaylistController(MpvWidget *mpv, PlaylistDrawer *drawer, Q
     connect(m_drawer, &PlaylistDrawer::removeMissingRequested, this, &PlaylistController::removeMissing);
     connect(m_drawer, &PlaylistDrawer::removeDuplicatesRequested, this, &PlaylistController::removeDuplicates);
     connect(m_drawer, &PlaylistDrawer::savePlaylistRequested, this, &PlaylistController::savePlaylistDialog);
+
+    m_playlistTimer.setSingleShot(true);
+    m_playlistTimer.setInterval(kPlaylistRefreshMs);
+    connect(&m_playlistTimer, &QTimer::timeout, this, &PlaylistController::updateDrawer);
 
     m_durationTimer.setSingleShot(true);
     m_durationTimer.setInterval(kDurationRefreshMs);
@@ -83,7 +87,13 @@ void PlaylistController::setPlaylist(const QVariantList &playlist)
 {
     m_playlist = playlist;
     m_entries = PlaylistOps::fromMpv(playlist);
-    m_drawer->setEntries(playlist, durations());
+    if (!m_playlistTimer.isActive())
+        m_playlistTimer.start();
+}
+
+void PlaylistController::updateDrawer()
+{
+    m_drawer->setEntries(m_playlist, durations());
     QStringList files;
     files.reserve(m_entries.size());
     for (const PlaylistOps::Entry &entry : std::as_const(m_entries))
@@ -137,18 +147,25 @@ void PlaylistController::addFolderDialog()
         addFolder(folder);
 }
 
-int PlaylistController::addFolder(const QString &folder)
+void PlaylistController::addFolder(const QString &folder)
 {
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    const QStringList files = MediaFiles::mediaFilesInFolder(folder);
-    QApplication::restoreOverrideCursor();
-    if (files.isEmpty()) {
-        Q_EMIT message(tr("No media files in"), QFileInfo(folder).fileName());
-        return 0;
-    }
-    m_mpv->insertFiles(files);
-    Q_EMIT message(tr("Added to Playlist"), tr("%n file(s)", nullptr, static_cast<int>(files.size())));
-    return static_cast<int>(files.size());
+    Q_EMIT message(tr("Scanning Folder"), QFileInfo(folder).fileName());
+    MediaFiles::expandFoldersAsync({folder}, this, [this, folder](const QStringList &files) {
+        if (files.isEmpty()) {
+            Q_EMIT message(tr("No media files in"), QFileInfo(folder).fileName());
+            return;
+        }
+        m_mpv->insertFiles(files);
+        Q_EMIT message(tr("Added to Playlist"), tr("%n file(s)", nullptr, static_cast<int>(files.size())));
+    });
+}
+
+void PlaylistController::addEntries(const QStringList &entries, int row)
+{
+    MediaFiles::expandFoldersAsync(entries, this, [this, row](const QStringList &files) {
+        if (!files.isEmpty())
+            m_mpv->insertFiles(files, row);
+    });
 }
 
 void PlaylistController::savePlaylistDialog()

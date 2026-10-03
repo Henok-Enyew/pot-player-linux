@@ -3,6 +3,10 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
+class QObject;
+
 // File types the player opens, and helpers for the open dialogs.
 namespace MediaFiles {
 
@@ -18,6 +22,14 @@ QString playlistSaveFilter();
 // Media files in `folder` and its subfolders, in natural order
 // ("Episode 2" before "Episode 10"), folders after the files beside them.
 QStringList mediaFilesInFolder(const QString &folder);
+
+// `entries` (paths or URLs) with each local folder replaced by its media
+// files, as listed by mediaFilesInFolder().
+QStringList expandFolders(const QStringList &entries);
+// Runs expandFolders() in a worker thread, so big or slow folders don't
+// freeze the window, then calls `done` in `context`'s thread. Nothing is
+// called if `context` is destroyed first.
+void expandFoldersAsync(const QStringList &entries, QObject *context, std::function<void(const QStringList &)> done);
 
 // Natural, case-insensitive order: runs of digits compare by value. Returns
 // <0, 0 or >0; only identical strings compare equal.

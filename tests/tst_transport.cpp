@@ -5,6 +5,8 @@
 #include "Icons.h"
 #include "MainWindow.h"
 #include "MpvWidget.h"
+#include "SeekBar.h"
+#include "ThumbnailGenerator.h"
 #include "TestClip.h"
 
 #include <QApplication>
@@ -12,6 +14,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
@@ -52,6 +55,7 @@ private Q_SLOTS:
     void clickTogglesPause();
     void doubleClickTogglesFullScreen();
     void aboutDialog();
+    void thumbnailsOnlyOnHover();
 
 private:
     QVariant prop(const char *name) const { return m_mpv->mpvProperty(QString::fromLatin1(name)); }
@@ -421,6 +425,28 @@ void TransportTest::aboutDialog()
         about->grab().save(dir + QStringLiteral("/about.png"));
     about->close();
     QTRY_VERIFY(!m_window->findChild<QDialog *>(QStringLiteral("AboutDialog")));
+}
+
+void TransportTest::thumbnailsOnlyOnHover()
+{
+    auto *thumbnails = m_window->findChild<ThumbnailGenerator *>();
+    auto *seekBar = m_window->findChild<SeekBar *>();
+    QVERIFY(thumbnails && seekBar);
+    // The playing file is known, but nothing is decoded for previews yet.
+    QTRY_VERIFY(thumbnails->isAvailable());
+    QTest::qWait(300);
+    QVERIFY(!thumbnails->isOpen());
+
+    QSignalSpy ready(thumbnails, &ThumbnailGenerator::thumbnailReady);
+    QTest::mouseMove(seekBar, QPoint(seekBar->width() / 2, seekBar->height() / 2));
+    QTRY_VERIFY(thumbnails->isOpen());
+    QTRY_VERIFY_WITH_TIMEOUT(!ready.isEmpty(), 10000);
+    QVERIFY(!ready.first().at(1).value<QImage>().isNull());
+
+    // Stopping closes the preview decoder too.
+    m_mpv->stop();
+    QTRY_VERIFY(!thumbnails->isAvailable());
+    QVERIFY(!thumbnails->isOpen());
 }
 
 int main(int argc, char *argv[])

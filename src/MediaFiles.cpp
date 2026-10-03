@@ -4,8 +4,10 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QObject>
 #include <QUrl>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
 
@@ -166,9 +168,33 @@ QStringList mediaFilesInFolder(const QString &folder)
     return files;
 }
 
+QStringList expandFolders(const QStringList &entries)
+{
+    QStringList result;
+    result.reserve(entries.size());
+    for (const QString &entry : entries) {
+        if (!entry.contains(QLatin1String("://")) && QFileInfo(entry).isDir())
+            result.append(mediaFilesInFolder(entry));
+        else
+            result.append(entry);
+    }
+    return result;
+}
+
+void expandFoldersAsync(const QStringList &entries, QObject *context, std::function<void(const QStringList &)> done)
+{
+    auto *watcher = new QFutureWatcher<QStringList>(context);
+    QObject::connect(watcher, &QFutureWatcherBase::finished, context, [watcher, done = std::move(done)] {
+        watcher->deleteLater();
+        done(watcher->result());
+    });
+    watcher->setFuture(QtConcurrent::run(&expandFolders, entries));
+}
+
 int naturalCompare(const QString &a, const QString &b)
 {
-    static const NaturalCollator natural;
+    // QCollator is reentrant, not thread-safe; folders are scanned in worker threads.
+    static thread_local const NaturalCollator natural;
     if (natural.usable) {
         if (const int cmp = natural.collator.compare(a, b); cmp != 0)
             return cmp;
@@ -178,6 +204,8 @@ int naturalCompare(const QString &a, const QString &b)
 
 QString localPath(const QString &entry)
 {
+    if (!entry.contains(QLatin1String("://")))
+        return entry;
     const QUrl url(entry);
     // One-letter "schemes" are not URLs; mpv treats anything else with :// as a stream.
     if (url.scheme().size() > 1 && entry.contains(QLatin1String("://")))

@@ -2,12 +2,15 @@
 #include "MpvHelpers.h"
 
 #include <QByteArray>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QMetaObject>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QPalette>
+#include <QTemporaryDir>
 
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
@@ -64,6 +67,20 @@ constexpr const char *kStateProperties[] = {
 constexpr const char *kObservedProperties[] = {
     "volume", "mute", "speed", "pause", "audio-delay", "sub-delay", "sub-scale", "sub-pos",
 };
+
+// Whether `entry` can go into a temporary M3U playlist and come back out
+// unchanged. Streams are loaded one by one: mpv trusts entries of a playlist
+// file less than ones it is given directly.
+bool isBatchable(const QString &entry)
+{
+    if (entry.isEmpty() || entry.contains(QLatin1Char('\n')) || entry.contains(QLatin1Char('\r'))
+        || entry.trimmed() != entry || entry.startsWith(QLatin1Char('#')))
+        return false;
+    return !entry.contains(QLatin1String("://")) || entry.startsWith(QLatin1String("file://"));
+}
+
+// Well below the ~1000 unanswered requests mpv accepts per client.
+constexpr int kMaxPendingReplies = 256;
 
 const QStringList kSubtitleExtensions{
     QStringLiteral("srt"), QStringLiteral("ass"), QStringLiteral("ssa"), QStringLiteral("vtt"),
@@ -127,9 +144,7 @@ void MpvWidget::loadFiles(const QStringList &files, const QStringList &subtitles
     if (files.isEmpty())
         return;
     m_pendingSubtitles = subtitles;
-    QList<QStringList> commands{{QStringLiteral("loadfile"), files.first(), QStringLiteral("replace")}};
-    for (qsizetype i = 1; i < files.size(); ++i)
-        commands.append({QStringLiteral("loadfile"), files[i], QStringLiteral("append")});
+    const QList<QStringList> commands = queueCommands(files, QStringLiteral("replace"));
 
     if (!m_renderCtx) {
         m_pendingLoads = commands;
@@ -157,8 +172,7 @@ void MpvWidget::restorePlaylist(const QStringList &files, int current, double re
     m_pendingSubtitles.clear();
     // "append" queues without starting playback, unlike "append-play".
     QList<QStringList> commands{{QStringLiteral("stop")}};
-    for (const QString &file : files)
-        commands.append({QStringLiteral("loadfile"), file, QStringLiteral("append")});
+    commands.append(queueCommands(files, QStringLiteral("append")));
     current = std::clamp(current, -1, static_cast<int>(files.size()) - 1);
     m_lastPlaylistPos = current;
     if (resumeAt >= 0 && current >= 0) {
@@ -183,20 +197,79 @@ void MpvWidget::runOrDefer(const QList<QStringList> &commands)
 
 void MpvWidget::insertFiles(const QStringList &files, int row)
 {
+    if (files.isEmpty())
+        return;
+    const QList<QStringList> commands = queueCommands(files, QStringLiteral("append-play"));
     if (!m_renderCtx) {
-        for (const QString &file : files)
-            m_pendingLoads.append({QStringLiteral("loadfile"), file, QStringLiteral("append-play")});
+        m_pendingLoads.append(commands);
         return;
     }
-    // Commands run in order, so each appended entry is at count + i when it is moved.
+    // Commands run in order, so the appended entries are at count + i when they are moved.
+    // (The count misses entries still waiting in m_commandQueue, which only
+    // holds anything after hundreds of commands in a row.)
     const int count = mpvProperty(QStringLiteral("playlist-count")).toInt();
-    for (qsizetype i = 0; i < files.size(); ++i) {
-        command({QStringLiteral("loadfile"), files[i], QStringLiteral("append-play")});
-        if (row >= 0 && row < count) {
-            command({QStringLiteral("playlist-move"), QString::number(count + i),
-                     QString::number(row + i)});
+    for (const QStringList &cmd : commands)
+        command(cmd);
+    if (row >= 0 && row < count) {
+        for (qsizetype i = 0; i < files.size(); ++i)
+            command({QStringLiteral("playlist-move"), QString::number(count + i), QString::number(row + i)});
+    }
+}
+
+QList<QStringList> MpvWidget::queueCommands(const QStringList &files, const QString &flag)
+{
+    QList<QStringList> commands;
+    QString nextFlag = flag;
+    const auto add = [&](const QString &name, const QString &target) {
+        commands.append({name, target, nextFlag});
+        // Only the first command replaces the playlist; the rest add to it.
+        if (nextFlag == QLatin1String("replace"))
+            nextFlag = QStringLiteral("append");
+    };
+    QStringList batch;
+    const auto flush = [&] {
+        const QString list = batch.size() > 1 ? writeBatch(batch) : QString();
+        if (!list.isEmpty()) {
+            add(QStringLiteral("loadlist"), list);
+        } else {
+            for (const QString &file : std::as_const(batch))
+                add(QStringLiteral("loadfile"), file);
+        }
+        batch.clear();
+    };
+    for (const QString &file : files) {
+        if (isBatchable(file)) {
+            batch.append(file);
+        } else {
+            flush();
+            add(QStringLiteral("loadfile"), file);
         }
     }
+    flush();
+    return commands;
+}
+
+QString MpvWidget::writeBatch(const QStringList &files)
+{
+    if (!m_batchDir)
+        m_batchDir = std::make_unique<QTemporaryDir>(QDir::tempPath() + QStringLiteral("/top-player-XXXXXX"));
+    if (!m_batchDir->isValid())
+        return {};
+    const QString path = m_batchDir->filePath(QStringLiteral("queue-%1.m3u8").arg(m_nextBatch++));
+    QByteArray data("#EXTM3U\n");
+    for (const QString &file : files) {
+        // Relative entries would be resolved against the playlist's folder.
+        const bool url = file.contains(QLatin1String("://"));
+        data += (url || QDir::isAbsolutePath(file) ? file : QFileInfo(file).absoluteFilePath()).toUtf8();
+        data += '\n';
+    }
+    QFile out(path);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate) || out.write(data) != data.size()) {
+        out.remove();
+        return {};
+    }
+    m_batchFiles.insert(path);
+    return path;
 }
 
 void MpvWidget::addSubtitle(const QString &path)
@@ -281,7 +354,26 @@ bool MpvWidget::playIndex(int index)
 
 void MpvWidget::command(const QStringList &args)
 {
-    mpvCommandAsync(m_mpv, args);
+    quint64 reply = 0;
+    if (args.size() > 1 && args.first() == QLatin1String("loadlist") && m_batchFiles.remove(args[1])) {
+        reply = m_nextBatch++;
+        m_batchReplies.insert(reply, args[1]);
+    }
+    m_commandQueue.append({args, reply});
+    sendQueuedCommands();
+}
+
+void MpvWidget::sendQueuedCommands()
+{
+    while (!m_commandQueue.isEmpty() && m_pendingReplies < kMaxPendingReplies) {
+        const QueuedCommand next = m_commandQueue.takeFirst();
+        if (mpvCommandAsync(m_mpv, next.args, next.reply) >= 0) {
+            ++m_pendingReplies;
+        } else if (next.reply) {
+            // An invalid command; there will be no reply.
+            QFile::remove(m_batchReplies.take(next.reply));
+        }
+    }
 }
 
 QVariant MpvWidget::mpvProperty(const QString &name) const
@@ -306,10 +398,8 @@ QString MpvWidget::mpvPropertyString(const QString &name) const
 
 void MpvWidget::setMpvProperty(const QString &name, const QString &value)
 {
-    // mpv copies the data before returning, so temporaries are fine here.
-    const QByteArray utf8 = value.toUtf8();
-    const char *data = utf8.constData();
-    mpv_set_property_async(m_mpv, 0, name.toUtf8().constData(), MPV_FORMAT_STRING, &data);
+    // The set command parses the value like setting the property as a string.
+    command({QStringLiteral("set"), name, value});
 }
 
 QList<QVariantMap> MpvWidget::tracks(const QString &type) const
@@ -459,6 +549,13 @@ void MpvWidget::processMpvEvents()
             }
             break;
         }
+        case MPV_EVENT_COMMAND_REPLY:
+            --m_pendingReplies;
+            // mpv has read the temporary playlist.
+            if (const QString batch = m_batchReplies.take(event->reply_userdata); !batch.isEmpty())
+                QFile::remove(batch);
+            sendQueuedCommands();
+            break;
         case MPV_EVENT_START_FILE:
             m_fileLoaded = false;
             m_audioOnly = false;

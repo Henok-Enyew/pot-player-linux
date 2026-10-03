@@ -88,21 +88,25 @@ void ThumbnailGenerator::setFile(const QString &path)
 {
     if (!m_mpv)
         return;
+    if (path == m_path)
+        return;
     m_cache.clear();
     m_loaded = false;
     m_inFlight = -1;
     m_pending = -1;
     m_watchdog.stop();
-    if (path.isEmpty())
+    m_path = path;
+    // Close the previous file; the new one opens on the first hover.
+    if (std::exchange(m_opened, false))
         mpvCommandAsync(m_mpv, {QStringLiteral("stop")});
-    else
-        mpvCommandAsync(m_mpv, {QStringLiteral("loadfile"), path});
 }
 
 void ThumbnailGenerator::request(double seconds)
 {
-    if (!m_mpv)
+    if (!isAvailable())
         return;
+    if (!std::exchange(m_opened, true))
+        mpvCommandAsync(m_mpv, {QStringLiteral("loadfile"), m_path});
     const int second = std::max(0, static_cast<int>(seconds));
     if (const QImage *cached = m_cache.object(second)) {
         Q_EMIT thumbnailReady(second, *cached);

@@ -257,11 +257,13 @@ void MainWindow::openFolderDialog()
     const QString folder = QFileDialog::getExistingDirectory(this, tr("Open Folder"));
     if (folder.isEmpty())
         return;
-    const QStringList files = MediaFiles::mediaFilesInFolder(folder);
-    if (files.isEmpty())
-        m_osd->showValue(tr("No media files in"), QFileInfo(folder).fileName());
-    else
-        openFiles(files);
+    m_osd->showValue(tr("Scanning Folder"), QFileInfo(folder).fileName());
+    MediaFiles::expandFoldersAsync({folder}, this, [this, folder](const QStringList &files) {
+        if (files.isEmpty())
+            m_osd->showValue(tr("No media files in"), QFileInfo(folder).fileName());
+        else
+            openFiles(files);
+    });
 }
 
 void MainWindow::openUrlDialog()
@@ -323,14 +325,19 @@ void MainWindow::openUrls(const QList<QUrl> &urls)
         }
         const QString path = url.toLocalFile();
         if (QFileInfo(path).isDir())
-            media.append(MediaFiles::mediaFilesInFolder(path));
+            media.append(path); // expanded below, off the GUI thread
         else if (MpvWidget::isSubtitleFile(path))
             subtitles.append(path);
         else
             media.append(path);
     }
     if (!media.isEmpty()) {
-        m_mpv->loadFiles(media, subtitles);
+        MediaFiles::expandFoldersAsync(media, this, [this, subtitles](const QStringList &files) {
+            if (files.isEmpty())
+                m_osd->showValue(tr("No media files found"));
+            else
+                m_mpv->loadFiles(files, subtitles);
+        });
     } else if (!subtitles.isEmpty()) {
         for (const QString &subtitle : std::as_const(subtitles))
             loadSubtitle(subtitle);

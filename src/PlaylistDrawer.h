@@ -26,7 +26,8 @@ public:
 Q_SIGNALS:
     // Move entry `from` so it takes the place of entry `to` (mpv playlist-move semantics).
     void moveRequested(int from, int to);
-    // Media files dropped at playlist index `row` (-1 = end).
+    // Files, folders and URLs dropped at playlist index `row` (-1 = end).
+    // Folders are not expanded yet.
     void filesDropped(const QStringList &files, int row);
     void removeRequested(const QList<int> &rows);
 

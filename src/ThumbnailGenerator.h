@@ -18,12 +18,16 @@ public:
     explicit ThumbnailGenerator(QObject *parent = nullptr);
     ~ThumbnailGenerator() override;
 
-    // Opens `path` for previews; an empty path disables them.
+    // Sets the file previews come from; an empty path disables them. Nothing
+    // is opened or decoded until the first request().
     void setFile(const QString &path);
-    bool isAvailable() const { return m_loaded; }
+    bool isAvailable() const { return m_mpv && !m_path.isEmpty(); }
+    // True once the file has been opened for a request.
+    bool isOpen() const { return m_opened; }
 
-    // Requests the frame near `seconds`. thumbnailReady() fires when it is
-    // available, immediately if cached. Only the latest request is kept.
+    // Requests the frame near `seconds`, opening the file on the first request.
+    // thumbnailReady() fires when it is available, immediately if cached. Only
+    // the latest request is kept.
     void request(double seconds);
 
 Q_SIGNALS:
@@ -44,6 +48,9 @@ private:
     mpv_render_context *m_renderCtx = nullptr;
     QCache<int, QImage> m_cache;
     QSize m_size{256, 144};
+    QString m_path;
+    // The file was sent to mpv; it is opened at most once per setFile().
+    bool m_opened = false;
     bool m_loaded = false;
     int m_inFlight = -1;
     int m_pending = -1;
