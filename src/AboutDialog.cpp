@@ -3,6 +3,7 @@
 #include "MpvWidget.h"
 #include "Theme.h"
 
+#include <QAbstractButton>
 #include <QDialogButtonBox>
 #include <QFrame>
 #include <QGridLayout>
@@ -156,6 +157,9 @@ AboutDialog::AboutDialog(MpvWidget *mpv, QWidget *parent)
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     buttons->setCenterButtons(true);
+    // The style's stock icons don't fit the flat skin.
+    for (QAbstractButton *button : buttons->buttons())
+        button->setIcon(QIcon());
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addSpacing(6);
     layout->addWidget(buttons);

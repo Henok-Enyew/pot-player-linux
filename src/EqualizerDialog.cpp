@@ -1,6 +1,7 @@
 #include "EqualizerDialog.h"
 #include "Equalizer.h"
 
+#include <QAbstractButton>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QGridLayout>
@@ -78,6 +79,9 @@ EqualizerDialog::EqualizerDialog(Equalizer *equalizer, QWidget *parent)
     layout->addLayout(bands);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    // The style's stock icons don't fit the flat skin.
+    for (QAbstractButton *button : buttons->buttons())
+        button->setIcon(QIcon());
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addSpacing(6);
     layout->addWidget(buttons);
