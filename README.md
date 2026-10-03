@@ -1,23 +1,406 @@
+<a id="top"></a>
+
+<div align="center">
+
+<img src="packaging/linux/org.github.topplayer.svg" alt="Top Player logo" width="112">
+
 # Top Player
 
-High-performance, lightweight native media player for Linux powered by
-**Qt 6** and **libmpv**. Developed by Henok Enyew Andargie.
+**A fast, lightweight native media player for Linux, built on Qt 6 and libmpv.**
+
+Video, music, live TV and online radio in one dark, focused player, with subtitle downloads,
+a 10-band equalizer, a playlist manager and a media library.
+
+[![Latest release](https://img.shields.io/github/v/release/Henok-Enyew/top-player-linux?label=release&color=00D2FF)](https://github.com/Henok-Enyew/top-player-linux/releases/latest)
+[![CI](https://github.com/Henok-Enyew/top-player-linux/actions/workflows/ci.yml/badge.svg)](https://github.com/Henok-Enyew/top-player-linux/actions/workflows/ci.yml)
+[![Release build](https://github.com/Henok-Enyew/top-player-linux/actions/workflows/release.yml/badge.svg)](https://github.com/Henok-Enyew/top-player-linux/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-121316)](LICENSE)
+![Platform: Linux](https://img.shields.io/badge/platform-Linux-1A1C22)
+![Qt 6](https://img.shields.io/badge/Qt-6-1A1C22)
+![libmpv](https://img.shields.io/badge/powered%20by-libmpv-1A1C22)
+
+**[⬇ Download](https://github.com/Henok-Enyew/top-player-linux/releases/latest)** ·
+[Features](#features) ·
+[Screenshots](#screenshots) ·
+[Install](#install) ·
+[Shortcuts](#keyboard-and-mouse) ·
+[Build](#building-from-source) ·
+[Releases](#releases) ·
+[License](#license)
+
+</div>
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/start-screen.png" alt="Start screen with open actions"></td>
+    <td width="50%"><img src="docs/screenshots/audio-playlist.png" alt="Audio view with album art and the playlist drawer"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Start screen</sub></td>
+    <td align="center"><sub>Audio view with album art, and the playlist drawer</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/live-tv.png" alt="Live TV & Radio browser"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/equalizer.png" alt="Audio Control & Equalizer" width="300"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Live TV &amp; Radio browser</sub></td>
+    <td align="center"><sub>Audio Control &amp; 10-band equalizer</sub></td>
+  </tr>
+</table>
+
+## Highlights
+
+|  |  |
+| --- | --- |
+| 🎬 **Plays everything mpv plays** | Every common video and audio format, streams and playlists, with hardware decoding. |
+| 📺 **Live TV & Radio** | Free channels and stations from every country, with categories, search and automatic fallback streams. |
+| 💬 **Subtitles without an account** | Exact-match and by-name search, one-click download, dual subtitles. |
+| 🎚️ **Studio-style sound** | Preamp, bass, treble, a 10-band equalizer with presets, and night mode. |
+| 📂 **Playlist & Library** | Sorting, search, shuffle and repeat, M3U save/open, and saved folders and playlists. |
+| ✂️ **Built-in tools** | Lossless cutting, audio extraction, and downloads from YouTube and 1000+ sites. |
+| ⚡ **Fast and light** | Native Qt 6 and libmpv, background scanning, no freezes on huge folders. |
+
+---
+
+## Features
+
+<details open>
+<summary><b>Contents</b></summary>
+
+- [Playback](#playback)
+- [Interface](#interface)
+- [Audio view](#audio-view)
+- [Audio Control & Equalizer](#audio-control--equalizer)
+- [Playlist](#playlist)
+- [Library](#library)
+- [Live TV & Radio](#live-tv--radio)
+- [Subtitles](#subtitles)
+- [Tools](#tools)
+- [Settings and files](#settings-and-files)
+
+</details>
+
+### Playback
+
+- Opens **files, folders, URLs and streams** (http, https, rtsp, rtmp, ...) and
+  playlists (`.m3u`, `.m3u8`, `.pls`): from the start screen, the right-click
+  menu, the command line (`top-player video.mkv [more files...]`) or by
+  **drag and drop** (the first file plays, the rest are queued).
+- **Folders** are scanned with all their subfolders in a background thread, in
+  natural order ("Episode 2" before "Episode 10"), and handed to mpv as one
+  batch, so thousands of files never freeze the window.
+- **Hardware decoding**: Auto (Safe), Auto (Copy-back), VA-API, NVDEC, Vulkan
+  or Off (Software).
+- **Speed** from 0.25x to 2.0x, in 0.1 steps (`C` / `X` / `Z`), **Loop File**,
+  **Shuffle** and **Repeat** (Off → All → One).
+- **Video**: track selection, **aspect ratio** (Default, 4:3, 16:9, 1.85:1,
+  2.35:1), quick **Fit to Window / 16:9 / 100%** button, **rotate** (0°, 90°,
+  180°, 270°), **deinterlace**, and **screenshots** (`Ctrl+E`, saved to
+  `~/Pictures`).
+- **Audio**: track selection, mute, volume up to mpv's maximum, and **audio
+  delay** in 0.1 s steps.
+- **Stop keeps the playlist**: Play, Previous and Next continue from the entry
+  that was playing. Media keys (play, pause, stop, previous, next) work too.
+
+### Interface
+
+A flat **electric cyan on obsidian** skin (accent `#00D2FF`, surface `#121316`,
+panels `#1A1C22`) defined in [`resources/skin/top-player.qss`](resources/skin/top-player.qss)
+on top of Qt's Fusion style; self-painted widgets share the palette in
+[`src/Theme.h`](src/Theme.h). All icons are drawn as vectors in code.
+
+- **Start screen** while nothing is loaded, with **Open File**, **Open
+  Folder**, **Open URL / Stream**, **Open Playlist** and a drop zone. It fades
+  out as playback starts and adapts to small windows, down to icon-only buttons.
+- **Title bar** with the media title and minimize / maximize / close. Drag it
+  to move the window, double-click to maximize.
+- **Control bar** with open, previous, play/pause, stop and next; **shuffle**
+  (lit cyan while on) and **repeat** (the icon shows a "1" in Repeat One); the
+  time; volume; an **aspect** button (Fit to Window → 16:9 → 100%); and
+  playlist and fullscreen toggles. The mode buttons follow the menu (e.g. Loop
+  File) and step aside in narrow windows.
+- **Seekbar** that thickens on hover, marks chapters and the cut range, and
+  shows a **thumbnail preview** of the hovered moment. Previews come from a
+  second, headless libmpv instance that only opens the file on the first hover.
+- **On-screen display** for volume, seeking, speed, delays, modes and messages.
+- **Click** the video to pause, **double-click** for fullscreen.
+- **Fullscreen** hides the title and control bars; the control bar comes back
+  when the pointer nears the bottom edge, and controls and cursor hide again
+  after two seconds. The playlist drawer stays as you left it and opens and
+  closes with `F6` in fullscreen too.
+- **Window size** follows the video (100%, shrunk to fit the screen), or pick
+  50% / 100% / 150% / 200% (`Alt+1`..`Alt+4`); **Always on Top** (`Ctrl+T`).
+- **About Top Player** (`F1`): version, credits, links, license, and the Qt,
+  libmpv and video acceleration details.
+
+### Audio view
+
+Audio files (no video, or only cover art) get their own view instead of a
+black screen; seeking, volume and track switching work as for video.
+
+- The **cover** is shown with a soft drop shadow above the **title, artist and
+  album**. It comes from, in order: an image you assign (**Audio → Set Custom
+  Audio Artwork...**, undone with **Clear Custom Audio Artwork**), art embedded
+  in the file (ID3 `APIC`, FLAC / Vorbis `METADATA_BLOCK_PICTURE`, MP4 cover
+  atoms), or a `cover` / `folder` / `front` / `album` image next to the track.
+- **Audio → Visualizations**: **Album Art Mode** (falls back to the spectrum
+  without a cover), **Waveform Visualizer**, **Frequency Spectrum** (mpv's
+  `showwaves` / `showfreqs` through `lavfi-complex`), or **Off**, a minimal
+  canvas with the track's metadata.
+
+### Audio Control & Equalizer
+
+**Audio → Audio Control & Equalizer...** (`F7`) changes the sound live:
+
+- **Preamp** (−10 to +10 dB), **Bass** (110 Hz) and **Treble** (3 kHz), −15 to +20 dB.
+- A **10-band equalizer** (31 Hz to 16 kHz, ±12 dB) with presets: **Flat**,
+  **Bass Boost**, **Club**, **Rock**, **Vocal Clear** and **Cinema/Action**.
+- **Loudness Normalization (Night Mode)** evens out loud and quiet passages.
+- **Reset to Default** turns everything off.
+
+The effects are one FFmpeg filter graph in mpv's `af` property (`volume`,
+`bass`, `treble`, `equalizer`, `dynaudnorm`), so they apply to video and audio
+alike, and they are restored on the next start.
+
+### Playlist
+
+The drawer (`F6` or the playlist button) slides in from the right and mirrors
+mpv's playlist. Each entry shows its duration, read in the background.
+
+- **Reorder** by dragging, **drop** files from a file manager at any position,
+  **double-click** to play, `Del` to remove.
+- **Add Files...** and **Add Folder...** ("Added 24 items from Season 1").
+- **Sort** by name, duration, file path or file size, **Reverse Order**, and
+  **Shuffle**; the playing file keeps playing.
+- **Remove Missing/Inaccessible Files**, **Remove Duplicates** (keeps the
+  playing copy) and **Clear Playlist**.
+- A **search field** that filters as you type, matching every word against
+  names and paths, without changing the playlist.
+- **Save Playlist...** (`Ctrl+S`): extended M3U in UTF-8 with titles and
+  durations, as `.m3u8` or `.m3u`.
+- **Open Playlist...**: reads `.m3u` / `.m3u8` / `.pls` in the background,
+  keeps the titles, skips files that no longer exist and reports what was
+  opened ("12 items from Road Trip.m3u8 · 1 missing skipped").
+- **Remember Playlist on Exit** and **Resume Playback Position** (both on by
+  default): the queue comes back on the next start, reopening the last entry
+  paused where you left it.
+- **Resizable and expandable**: drag the drawer's edge (the width is
+  remembered), or click the expand button (or double-click the edge) to spread
+  it over the video.
+- While the list has the keyboard, `Up` / `Down`, `Home` / `End` and `Enter`
+  move through and play entries; click the video to give the keys back.
+
+### Library
+
+The drawer's second tab keeps folders and playlists inside the player.
+
+- **Add Folder to Library...**: browse its subfolders and media files.
+  Double-click a folder to play all of it, or a file to play its folder from
+  that file on.
+- **Save Current Playlist to Library...** stores the queue as a named playlist;
+  **Add Playlist File to Library...** references an existing `.m3u` / `.m3u8` /
+  `.pls`. Expand a playlist to see its entries and start from any of them.
+- Right-click for **Add to Playlist**, **Rename...**, **Replace with Current
+  Playlist**, **Refresh** and **Remove from Library** (**Delete Playlist** for
+  playlists saved in the library, after confirming). Items can be dragged
+  onto the video or the playlist.
+
+### Live TV & Radio
+
+**Live TV & Radio...** (`Ctrl+L`) browses free live streams in two tabs:
+
+- **Live TV**: channels of a country from the [iptv-org](https://github.com/iptv-org/iptv)
+  playlists, or **All Countries** at once, each with its country, category and
+  resolution.
+- **Online Radio**: stations of a country from the community
+  [Radio-Browser](https://www.radio-browser.info) directory, most popular
+  first, with their tags and bitrate.
+
+Ethiopia is pinned at the top of the country list, followed by **All
+Countries** and **every other country** alphabetically. Then:
+
+- A **category** filter (News, Sports, Movies, Music, Kids, ...; tags for radio).
+- A **search** box that matches name, country, language and genre as you type.
+- **Hide geo-blocked** (on by default) hides channels that only play in their
+  own country.
+- Channel **logos** load in the background for the rows on screen.
+- **Play** (or double-click) to watch; radio opens in the audio view. Right-click
+  → **Add to Current Playlist** or **Copy Stream URL**.
+- **Reliable playback**: each channel is requested with the referrer and user
+  agent its playlist asks for (`#EXTVLCOPT`), or a browser's, since many TV
+  servers refuse media players with 403 Forbidden. If a stream fails, the
+  channel's **other streams are tried in turn**; a channel with none left is
+  greyed out with a clear "offline or not available in your region" message.
+- Lists and logos are **cached for 24 hours**, and the cached copy is used
+  offline. **Refresh** reloads from the server.
+
+### Subtitles
+
+- Subtitles next to the video, or in a `sub` / `subs` / `subtitles` folder,
+  **load automatically** when their names match.
+- **Drop** a subtitle file onto the window, or **Load Subtitle File...**.
+- **Dual subtitles**: a **Secondary Subtitle Track** shows a second language
+  at the top while the primary stays at the bottom.
+- Adjust **delay** (0.5 s and 0.1 s steps), **size** and **position**, or hide
+  either track.
+- **Download Subtitles** (`D`), with no account or API key needed. The title,
+  year, season and episode are read from the file name
+  ("The.Matrix.1999.1080p.BluRay.mkv" → *The Matrix*, 1999), in your language.
+  - **Search by Hash (Exact Match)** finds subtitles made for this exact file
+    through OpenSubtitles' [movie hash](https://trac.opensubtitles.org/projects/opensubtitles/wiki/HashSourceCodes)
+    (needs the build's key or your own, under **Subtitle Download Settings...**).
+  - **Search by Name** uses [podnapisi.net](https://www.podnapisi.net), then
+    OpenSubtitles if set up; subtitles named like your file are marked
+    **Release match**.
+  - **Download & Play** saves to `~/.cache/top-player/subtitles/` (or next to
+    the video) and shows it right away. `Esc` cancels a search.
+
+### Tools
+
+- **Cut / Extract Media** (`Ctrl+X`): mark the range while playing with
+  `Ctrl+[` (A) and `Ctrl+]` (B); cyan brackets show it on the seekbar. Save it
+  as a **lossless stream copy** (instant) or **audio only** (MP3, AAC or FLAC)
+  with `ffmpeg`, with progress, cancel, **Open in Player** and **Show in File
+  Manager**. **Clear In/Out Points** resets the range.
+- **Download from URL** (`Ctrl+Shift+D`): YouTube, TikTok, Instagram, X, Vimeo
+  and every site [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports. Pick
+  **Best Video + Audio**, **4K**, **1080p**, **720p** or **Audio Only (.mp3)**
+  and a folder (`~/Videos` by default), with progress, speed and ETA.
+  **Direct Stream** plays the link without saving it.
+
+> [!NOTE]
+> The tools use the system's `ffmpeg` and `yt-dlp`, so they are available in
+> the AppImage, RPM and source builds, not in the Flatpak.
+
+### Settings and files
+
+| What | Where |
+| --- | --- |
+| Settings | `~/.config/top-player/settings.ini` |
+| Last playlist and position | `~/.config/top-player/last_playlist.json` |
+| Library | `~/.config/top-player/library.json` |
+| Library playlists | `~/.config/top-player/playlists/<name>.m3u8` |
+| Audio effects | `~/.config/top-player/audio_settings.json` |
+| Live TV & Radio lists and logos | `~/.cache/top-player/streams/` |
+| Downloaded subtitles | `~/.cache/top-player/subtitles/` |
+
+Settings from versions before 1.0 are copied over from
+`~/.config/potplayer-linux` on the first start.
+
+<p align="right"><a href="#top">↑ Back to top</a></p>
+
+---
 
 ## Install
 
-Each [GitHub Release](https://github.com/henok-enyew/pot-player-linux/releases)
-ships three packages:
+Download the package for your system from the
+**[latest release](https://github.com/Henok-Enyew/top-player-linux/releases/latest)**:
 
 | Package | Install |
 | --- | --- |
-| AppImage | `chmod +x Top_Player-*.AppImage && ./Top_Player-*.AppImage` |
-| Flatpak | `flatpak install --user Top_Player-*.flatpak` (needs the Flathub remote for the KDE runtime) |
-| Fedora RPM | `sudo dnf install ./top-player-*.x86_64.rpm` |
+| **AppImage** (any distro) | `chmod +x Top_Player-*.AppImage && ./Top_Player-*.AppImage` |
+| **Flatpak** | `flatpak install --user Top_Player-*.flatpak` (needs the Flathub remote for the KDE runtime) |
+| **Fedora RPM** | `sudo dnf install ./top-player-*.x86_64.rpm` |
 
-The AppImage is built on Ubuntu 24.04, so it needs glibc 2.39 or newer
-(Ubuntu 24.04+, Fedora 40+, Debian 13+). On older systems use the Flatpak.
+Each release also includes a `SHA256SUMS` file to verify the downloads.
 
-## Building
+> [!TIP]
+> The AppImage is built on Ubuntu 24.04 and needs glibc 2.39 or newer
+> (Ubuntu 24.04+, Fedora 40+, Debian 13+). On older systems, use the Flatpak.
+
+**Optional tools:** `ffmpeg` for Cut / Extract Media (`sudo dnf install ffmpeg`
+from RPM Fusion, or `sudo apt install ffmpeg`) and `yt-dlp` for Download from
+URL (`sudo dnf install yt-dlp`, `sudo apt install yt-dlp` or
+`pip install --user yt-dlp`).
+
+<p align="right"><a href="#top">↑ Back to top</a></p>
+
+---
+
+## Keyboard and mouse
+
+Right-click anywhere for the full menu: **Playback**, **Video**, **Audio**,
+**Subtitles**, **Tools**, **Window** and **Help**. Every item is bound to an
+mpv property or command, and check marks reflect mpv's live state.
+
+<table>
+<tr><td valign="top">
+
+**Playback**
+
+| Input | Action |
+| --- | --- |
+| `Space`, click video | Play / pause |
+| `Left` / `Right` | Seek −5 s / +5 s |
+| `Ctrl+Left` / `Ctrl+Right` | Seek −30 s / +30 s |
+| `Shift+Left` / `Shift+Right` | Seek −60 s / +60 s |
+| `PgUp` / `PgDn` | Previous / next file |
+| `Up` / `Down` | Volume ±2 |
+| Mouse wheel | Volume ±5 |
+| `M` | Mute |
+| `C` / `X` / `Z` | Speed +0.1 / −0.1 / reset |
+| `Ctrl+Shift+L` | Loop file |
+| `Ctrl+.` / `Ctrl+,` | Audio delay ±0.1 s |
+| Media keys | Play, pause, stop, previous, next |
+
+**Window**
+
+| Input | Action |
+| --- | --- |
+| Double-click video, `Enter` | Toggle fullscreen |
+| `Esc` | Leave fullscreen |
+| `F6` | Show / hide the playlist |
+| `Ctrl+T` | Always on top |
+| `Alt+1`..`Alt+4` | Window size 50–200% |
+| Drag video or title bar | Move window |
+| Drag window edge | Resize window |
+| Right-click | Context menu |
+| `F1` | About Top Player |
+| `Q` | Quit |
+
+</td><td valign="top">
+
+**Subtitles**
+
+| Input | Action |
+| --- | --- |
+| `D` | Download subtitles |
+| `]` / `[` | Delay ±0.5 s |
+| `.` / `,` | Delay ±0.1 s |
+| `Alt+L` | Next subtitle |
+| `Alt+Shift+L` | Next secondary subtitle |
+| `Alt+H` | Show / hide subtitles |
+| `Alt+Shift+H` | Show / hide secondary |
+| `Alt+Up` / `Alt+Down` | Move up / down |
+| `Alt+PgUp` / `Alt+PgDn` | Larger / smaller |
+
+**Tools and dialogs**
+
+| Input | Action |
+| --- | --- |
+| `Ctrl+O` | Open files |
+| `Ctrl+S` | Save playlist |
+| `Ctrl+L` | Live TV & Radio |
+| `F7` | Audio Control & Equalizer |
+| `Ctrl+[` / `Ctrl+]` | Set cut In / Out point |
+| `Ctrl+X` | Cut / extract media |
+| `Ctrl+Shift+D` | Download from URL |
+| `Ctrl+E` | Screenshot |
+| `Ctrl+D` | Deinterlace |
+
+</td></tr>
+</table>
+
+<p align="right"><a href="#top">↑ Back to top</a></p>
+
+---
+
+## Building from source
 
 ### Dependencies
 
@@ -26,7 +409,7 @@ The AppImage is built on Ubuntu 24.04, so it needs glibc 2.39 or newer
 | Ubuntu / Debian | `build-essential cmake ninja-build pkg-config qt6-base-dev libgl-dev libmpv-dev zlib1g-dev` |
 | Fedora | `gcc-c++ cmake ninja-build pkgconf-pkg-config qt6-qtbase-devel mesa-libGL-devel mpv-devel zlib-devel` |
 
-### Compile
+### Compile and run
 
 ```sh
 cmake -S . -B build -G Ninja
@@ -34,28 +417,14 @@ cmake --build build
 ./build/top-player /path/to/video.mkv [more files to queue...]
 ```
 
-`cmake --install build` installs the binary together with the desktop entry,
-icon and AppStream metadata (app ID `org.github.topplayer`).
-
-Without arguments the player opens on a start screen with **Open File**,
-**Open Folder** (queues the media files in a folder and its subfolders, in
-natural order), **Open URL / Stream** and **Open Playlist** (`.m3u`, `.m3u8`,
-`.pls`); the same actions are in the right-click menu. Files and folders can
-also be dragged onto the window (the first plays, the rest are queued) or
-onto the playlist drawer (queued where dropped). Folders are scanned in a
-background thread and handed to mpv as a single playlist, so adding
-thousands of files doesn't freeze the window.
-
-Settings and the saved playlist live in `~/.config/top-player`; on the
-first start, those of versions before 1.0 are copied over from
-`~/.config/potplayer-linux`.
+`cmake --install build` installs the binary with its desktop entry, icon and
+AppStream metadata (app ID `org.github.topplayer`).
 
 ### Tests
 
 The integration tests drive the real window through its buttons, hotkeys,
 dialogs and drop zone. They need Qt Test (part of `qt6-base-dev` /
-`qt6-qtbase-devel`), `ffmpeg` to generate a test clip, and a display, e.g.
-Xvfb:
+`qt6-qtbase-devel`), `ffmpeg` to generate test media, and a display such as Xvfb:
 
 ```sh
 cmake -S . -B build -G Ninja -DTOPPLAYER_BUILD_TESTS=ON
@@ -63,290 +432,78 @@ cmake --build build
 xvfb-run -a ctest --test-dir build --output-on-failure
 ```
 
-## Skin
-
-The interface uses a flat electric cyan on obsidian skin (accent `#00D2FF`,
-surface `#121316`, panels `#1A1C22`) defined in
-[`resources/skin/top-player.qss`](resources/skin/top-player.qss), applied on
-top of Qt's Fusion style with a matching palette. Widgets that paint
-themselves take the same colors from [`src/Theme.h`](src/Theme.h):
-
-- **Start screen** shown while nothing is loaded (on startup, after Stop,
-  or once the playlist is emptied): logo, open actions and a drop zone. It
-  fades out as playback starts and adapts to small windows by dropping the
-  logo and labels, down to icon-only buttons.
-- **Title bar** with the media title and minimize / maximize / close buttons.
-  Drag it to move the window; double-click to maximize.
-- **Control bar** with open, previous, play/pause, stop and next buttons,
-  **shuffle** (lit cyan while on) and **repeat** (Off → All → One), the
-  current time, a volume slider, an **aspect** button (Fit to Window → 16:9 →
-  100%), and playlist and fullscreen toggles. The mode buttons follow the
-  menu (e.g. Loop File) and step aside in narrow windows.
-- **Seekbar** (custom painted, themed via `qproperty-*` in the QSS) that
-  thickens on hover and marks chapters. Hovering shows a **thumbnail preview**
-  generated by a second, headless libmpv instance that decodes the same file
-  and renders frames with mpv's software render API. That instance opens the
-  file on the first hover, so nothing is decoded for previews until then.
-- **Audio files** (no video, or only a cover-art picture) get their own view
-  instead of a black screen; seeking, volume and audio track switching work
-  as for video. The cover is shown centered with a soft drop shadow above the
-  title, artist and album. It comes from, in order: an image you assigned
-  (right-click → **Audio → Set Custom Audio Artwork...**), the art embedded
-  in the file (ID3 `APIC` frames, FLAC and Vorbis comment
-  `METADATA_BLOCK_PICTURE` pictures, MP4 cover atoms; extracted by a
-  headless libmpv instance), or a `cover` / `folder` / `front` / `album`
-  image (`.jpg`, `.png`, ...) in the track's folder. **Audio →
-  Visualizations** switches between **Album Art Mode** (falls back to the
-  spectrum when there is no cover), a **Waveform Visualizer** and a
-  **Frequency Spectrum** (mpv's `showwaves` / `showfreqs` filters through
-  `lavfi-complex`), and **Off**, a dark canvas with the track's metadata.
-- **Playlist drawer** (`F6` or the playlist button) that slides in from the
-  right. It mirrors mpv's playlist: drag entries to reorder them, drop files
-  from a file manager to queue them at that position, double-click to play,
-  `Del` to remove. Each entry shows its duration, read in the background by
-  a headless libmpv instance. From its toolbar and right-click menu:
-  - **Add Files...** and **Add Folder...** (scans subfolders for video and
-    audio files and queues them in natural order, so "Episode 2" comes
-    before "Episode 10").
-  - **Sort** by name, duration, file path or file size, **Reverse Order**,
-    and **Shuffle**. Entries are moved inside mpv's playlist, so the playing
-    file keeps playing.
-  - **Remove Missing/Inaccessible Files**, **Remove Duplicates** (keeps the
-    playing copy) and **Clear Playlist**.
-  - A **search field** that filters the list as you type, matching every word
-    against names and paths, without changing the playlist.
-  - **Open Playlist...** and **Save Playlist...** (`Ctrl+S`; extended M3U
-    with titles and durations, `.m3u8` or `.m3u`).
-  - **Remember Playlist on Exit** and **Resume Playback Position** (both on
-    by default): the queue is saved to
-    `~/.config/top-player/last_playlist.json` and restored on the next
-    start without files on the command line, reopening the last entry
-    paused where it was left.
-
-  - **Resizable and expandable:** drag the drawer's left edge to make it
-    wider or narrower (the width is remembered), or click the expand button
-    in its header (or double-click the edge) to spread it over the video,
-    leaving a strip of the picture visible; click again to restore it.
-- **Library** (the drawer's second tab) keeps folders and playlists in the
-  player, saved in `~/.config/top-player/library.json`:
-  - **Add Folder to Library...** stores a folder; expand it to browse its
-    subfolders and media files. Double-click a folder to play all of it, or
-    a file to play its folder from that file on.
-  - **Save Current Playlist to Library...** stores the queue as a named
-    playlist (`~/.config/top-player/playlists/<name>.m3u8`), and **Add
-    Playlist File to Library...** references an existing `.m3u`/`.m3u8`/`.pls`.
-    Expand a playlist to see its entries and double-click one to play the
-    playlist from there.
-  - Right-click for **Add to Playlist**, **Rename...**, **Replace with Current
-    Playlist**, **Refresh** and **Remove from Library** (**Delete Playlist**
-    for playlists saved to the library, after confirming). Items can be
-    dragged onto the video or the playlist.
-
-In fullscreen the title bar and control bar are hidden; moving the pointer to
-the bottom edge reveals the control bar, and the controls and cursor hide
-again after two seconds without movement. The playlist drawer stays as you
-left it, and `F6` or the playlist button opens and closes it in fullscreen too.
-
-## Controls
-
-Right-click anywhere in the window to open the context menu. It is grouped
-into **Playback**, **Video**, **Audio**, **Subtitles**, **Window** and
-**Help** (**About Top Player**, `F1`: version, credits, links, license, and
-the Qt, libmpv and video acceleration details), and
-each item is bound directly to an mpv property or command (`pause`, `speed`,
-`loop-file`, `hwdec`, `video-aspect-override`, `video-rotate`, `deinterlace`,
-`vid`, `aid`, `sid`, `mute`, `audio-delay`, `sub-visibility`, `sub-delay`,
-`sub-scale`, ...). Track lists and check marks reflect mpv's live state each
-time the menu opens.
-
-Volume, seek position, speed, delays and other changes are shown in an
-on-screen display in the top-left corner (white labels, cyan values).
-
-When a file opens, the window resizes to 100% of the video resolution
-(shrunk to fit the screen if needed). Use **Window > Window Size** or
-`Alt+1`..`Alt+4` to change it.
-
-### Audio Control & Equalizer
-
-**Audio → Audio Control & Equalizer...** (`F7`) adjusts the sound as you
-move the controls:
-
-- **Preamp** (-10 to +10 dB), **Bass** (110 Hz) and **Treble** (3 kHz),
-  both -15 to +20 dB.
-- A **10-band equalizer** (31 Hz to 16 kHz, ±12 dB) with presets: **Flat**,
-  **Bass Boost**, **Club**, **Rock**, **Vocal Clear** and **Cinema/Action**.
-- **Loudness Normalization (Night Mode)** evens out loud and quiet passages.
-- **Reset to Default** turns everything off.
-
-The effects are one FFmpeg filter graph in mpv's `af` property (`volume`,
-`bass`, `treble`, `equalizer` and `dynaudnorm`), so they apply to video and
-audio files alike, and are saved in
-`~/.config/top-player/audio_settings.json` for the next start.
-
-### Live TV & Radio
-
-Right-click → **Live TV & Radio...** (`Ctrl+L`) opens a browser for free
-live streams, with two tabs:
-
-- **Live TV** lists the channels of a country from the
-  [iptv-org](https://github.com/iptv-org/iptv) playlists
-  (`https://iptv-org.github.io/iptv/countries/<code>.m3u`), or **All
-  Countries** from its category index, with each channel's country.
-- **Online Radio** lists the stations of a country from the community
-  [Radio-Browser](https://www.radio-browser.info) directory, most popular
-  first, with their tags and bitrate.
-
-Ethiopia is selected by default and pinned at the top of the country list,
-followed by **All Countries** and then every other country alphabetically.
-The category box narrows the list to a genre (News, Sports, Movies, ...; tags
-for radio), the search box filters by name, language, genre or country as you
-type, and **Hide geo-blocked** (on by default) hides TV channels that only
-play in their own country. **Refresh** reloads the list from the server. Channel logos load in the background for the rows on screen.
-Double-click a channel (or select it and press **Play**) to watch it, titled
-with the channel's name; radio stations open in the audio view with the
-chosen visualization. TV streams are requested with the referrer and user
-agent their playlist asks for (`#EXTVLCOPT` lines), or a browser's user agent,
-since many TV servers refuse media players' own with 403 Forbidden. If a
-channel can't be played, its other streams in the list are tried in turn; a
-channel with none left is greyed out, with a message that it is offline or
-not available in your region. Right-click → **Add to Current Playlist** queues a
-stream instead. Lists and logos are cached in
-`~/.cache/top-player/streams/` for 24 hours, and the cached copy is used
-when the server can't be reached.
-
-### Subtitles
-
-- Subtitles next to the video, or in a `sub`/`subs`/`subtitles` folder, load
-  automatically when their names match the video's.
-- Drop a subtitle file onto the window, or use **Subtitles > Load Subtitle
-  File...**, to add it to the current video.
-- **Dual subtitles:** pick a **Secondary Subtitle Track** (mpv's
-  `secondary-sid`) to show a second language at the top of the frame while
-  the primary track stays at the bottom.
-- **Download subtitles** (`D`, or **Subtitles > Download Subtitles...**)
-  needs no account or API key. The title is filled in from the file name
-  ("The.Matrix.1999.1080p.BluRay.mkv" becomes *The Matrix*, 1999;
-  "Show.S01E02" becomes season 1, episode 2), in your system language.
-  - **Search by Hash (Exact Match)** looks for subtitles made for this
-    exact file, by its OpenSubtitles
-    [movie hash](https://trac.opensubtitles.org/projects/opensubtitles/wiki/HashSourceCodes).
-    This uses OpenSubtitles, so it needs the build's built-in key or one of
-    your own (optional, under **Subtitles > Subtitle Download Settings...**);
-    otherwise, or for files under 128 KiB, it searches by name.
-  - **Search by Name** asks [podnapisi.net](https://www.podnapisi.net)
-    (no key needed), then OpenSubtitles if it is set up. Subtitles named
-    like your file are listed first as **Release match**.
-  - **Download & Play** (or double-click) saves the subtitle in
-    `~/.cache/top-player/subtitles/` (or next to the video, if you
-    choose so in the settings), selects it and shows it. `Esc` or
-    **Cancel** stops a running search. Being offline, a slow server or no
-    matches gives a message in the dialog, nothing more.
-
-### Tools
-
-- **Cut / Extract Media** (`Ctrl+X`, or **Tools > Cut / Extract Media...**):
-  mark the range while playing with `Ctrl+[` (In-point A) and `Ctrl+]`
-  (Out-point B); cyan brackets show it on the seekbar. The dialog takes the
-  range (editable as `HH:MM:SS.zzz`, with **Use Current Time** buttons) and
-  writes it with `ffmpeg`, either as a **lossless stream copy** (instant; the
-  picture starts at the first keyframe in the range) or as **audio only**
-  (MP3, AAC or FLAC). The clip is saved as `<title>_clip.<ext>` next to the
-  file by default. A progress dialog follows ffmpeg and can cancel it; when
-  done, **Open in Player** or **Show in File Manager**. Needs `ffmpeg`
-  (`sudo dnf install ffmpeg` from RPM Fusion, or `sudo apt install ffmpeg`).
-- **Download from URL** (`Ctrl+Shift+D`): downloads from YouTube, TikTok,
-  Instagram, X, Vimeo and the other sites
-  [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports. A link on the
-  clipboard is filled in. Pick **Best Video + Audio**, **4K**, **1080p**,
-  **720p** or **Audio Only (.mp3)** and a folder (`~/Videos` by default);
-  progress, speed and ETA show while it runs, and the file can play as soon
-  as it is done. **Direct Stream** plays the link in mpv without saving it.
-  Needs `yt-dlp` (`sudo dnf install yt-dlp`, `sudo apt install yt-dlp` or
-  `pip install --user yt-dlp`).
-
-The Flatpak can't run the host's `ffmpeg` or `yt-dlp`, so these two tools
-are only available in the AppImage, RPM and source builds.
-
-| Input | Action |
-| --- | --- |
-| `Space` | Play / pause (after Stop, plays the playlist again) |
-| `Left` / `Right` | Seek -5 s / +5 s |
-| `Ctrl+Left` / `Ctrl+Right` | Seek -30 s / +30 s |
-| `Shift+Left` / `Shift+Right` | Seek -60 s / +60 s |
-| `Up` / `Down` | Volume +/- 2 |
-| Mouse wheel | Volume +/- 5 |
-| `M` | Mute |
-| `C` / `X` / `Z` | Speed +0.1 / -0.1 / reset |
-| `Ctrl+L` | Live TV & Radio browser |
-| `Ctrl+Shift+L` | Loop file |
-| `]` / `[` | Subtitle delay +/- 0.5 s |
-| `.` / `,` | Subtitle delay +/- 0.1 s |
-| `Ctrl+.` / `Ctrl+,` | Audio delay +/- 0.1 s |
-| `Alt+L` / `Alt+Shift+L` | Next subtitle / next secondary subtitle |
-| `Alt+H` / `Alt+Shift+H` | Show / hide subtitles / secondary subtitles |
-| `D` | Download subtitles |
-| `F7` | Audio Control & Equalizer |
-| `Alt+Up` / `Alt+Down` | Move subtitles up / down |
-| `Alt+PgUp` / `Alt+PgDn` | Subtitle size |
-| `Ctrl+D` | Deinterlace |
-| `Ctrl+[` / `Ctrl+]` | Set cut In-point (A) / Out-point (B) |
-| `Ctrl+X` | Cut / extract media |
-| `Ctrl+Shift+D` | Download from URL |
-| `Ctrl+E` | Screenshot (saved to `~/Pictures`) |
-| `Ctrl+O` | Open files |
-| `PgUp` / `PgDn` | Previous / next file in the playlist |
-| Media keys | Play, pause, play/pause, stop, previous, next |
-| `F6` | Show / hide the playlist |
-| `Ctrl+T` | Always on top |
-| `Alt+1`..`Alt+4` | Window size 50% / 100% / 150% / 200% |
-| Click the video | Play / pause |
-| Double-click the video, `Enter` | Toggle fullscreen |
-| `Esc` | Leave fullscreen (back to the previous size) |
-| `F1` | About Top Player |
-| `Q` | Quit |
-| Right-click | Context menu |
-| Drag the video or title bar | Move window |
-| Drag window edge | Resize window |
-
-While the playlist has keyboard focus, `Up` / `Down`, `Home` / `End` and
-`Enter` move through and play its entries instead of changing the volume or
-fullscreen; click the video to give the keys back to the player.
-
-Stop keeps the playlist, so Play, Previous and Next continue from the entry
-that was playing.
-
-## Packaging and releases
+### Packaging
 
 | Format | Recipe | Build locally |
 | --- | --- | --- |
-| AppImage | [`packaging/appimage/build-appimage.sh`](packaging/appimage/build-appimage.sh) (linuxdeploy + linuxdeploy-plugin-qt) | `VERSION=1.0.1 packaging/appimage/build-appimage.sh` (also needs `qmake6`, optionally `qt6-wayland`) |
+| AppImage | [`packaging/appimage/build-appimage.sh`](packaging/appimage/build-appimage.sh) | `VERSION=1.0.1 packaging/appimage/build-appimage.sh` (also needs `qmake6`, optionally `qt6-wayland`) |
 | Flatpak | [`org.github.topplayer.yaml`](org.github.topplayer.yaml) (KDE 6.11 runtime, builds libmpv) | `flatpak-builder --user --install --force-clean build-flatpak org.github.topplayer.yaml` |
 | RPM | [`packaging/rpm/top-player.spec`](packaging/rpm/top-player.spec) | see the comment at the top of the spec |
 
-Packages land in `dist/`. The
-[Release workflow](.github/workflows/release.yml) builds all three. It runs
-on pull requests that touch packaging, and it can be started by hand from
-the Actions tab; both of those only build. Pushing a `v*` tag also
-publishes a GitHub Release with the packages and a `SHA256SUMS` file:
+Packages land in `dist/`.
+
+<details>
+<summary><b>OpenSubtitles API key (optional)</b></summary>
+
+To build in a default key for exact (hash) subtitle matches, add it as the
+repository secret `OPENSUBTITLES_API_KEY`; the release workflow passes it to
+all three builds. Locally, set `$OPENSUBTITLES_API_KEY` or put the key in an
+untracked `opensubtitles-api-key.txt` before running CMake. Without one,
+search by name still works through podnapisi.net, and users can enter a key
+of their own.
+
+</details>
+
+<p align="right"><a href="#top">↑ Back to top</a></p>
+
+---
+
+## Releases
+
+**[⬇ Latest release](https://github.com/Henok-Enyew/top-player-linux/releases/latest)** ·
+[All releases](https://github.com/Henok-Enyew/top-player-linux/releases)
+
+| Version | Date | Highlights |
+| --- | --- | --- |
+| [**1.0.1**](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v1.0.1) | 2026-10-03 | Live TV fix (referrer / user agent, fallback streams), every country with categories and Hide geo-blocked, playlist in fullscreen, shuffle / repeat / aspect buttons, better Open Playlist |
+| [**1.0.0**](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v1.0.0) | 2026-10-03 | Renamed to Top Player with a new icon and cyan skin, About dialog, click to pause, double-click for fullscreen, fast folder loading, 10-band equalizer |
+| [0.2.0](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v0.2.0) | 2026-10-03 | Subtitle download, audio view with cover art and visualizations, playlist manager with sorting, M3U and session restore |
+| [0.1.0](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v0.1.0) | 2026-10-02 | First release |
+
+<details>
+<summary><b>Publishing a release</b> (maintainers)</summary>
+
+The [Release workflow](.github/workflows/release.yml) builds the AppImage,
+Flatpak and RPM. It runs on pull requests that touch packaging and can be
+started from the Actions tab; both only build. Pushing a `v*` tag also
+publishes a GitHub Release with the packages and `SHA256SUMS`:
 
 1. Set `VERSION` in `project()` in `CMakeLists.txt` (the tag must match it),
    add a `<release>` entry to
-   [`packaging/linux/org.github.topplayer.metainfo.xml`](packaging/linux/org.github.topplayer.metainfo.xml)
+   [`packaging/linux/org.github.topplayer.metainfo.xml`](packaging/linux/org.github.topplayer.metainfo.xml),
    and commit.
 2. `git tag v1.0.1 && git push origin v1.0.1`
 
-To build in a default OpenSubtitles API key (for exact subtitle matches), add it as the repository secret
-`OPENSUBTITLES_API_KEY`; the workflow passes it to all three builds (locally:
-set `$OPENSUBTITLES_API_KEY`, or put the key in an untracked
-`opensubtitles-api-key.txt`, before running CMake). Without one, subtitle
-search still works through podnapisi.net, but exact (hash) matches need
-users to enter a key of their own.
-
 A tag with a suffix such as `v1.0.1-rc1` is published as a pre-release.
+
+</details>
+
+<p align="right"><a href="#top">↑ Back to top</a></p>
+
+---
 
 ## License
 
-[MIT](LICENSE). Copyright © 2026 Henok Enyew Andargie and Top Player contributors.
+Released under the [MIT License](LICENSE).
+Copyright © 2026 Henok Enyew Andargie and Top Player contributors.
 
-- GitHub: <https://github.com/Henok-Enyew/pot-player-linux>
-- Telegram: <https://t.me/enoch90s>
+<div align="center">
+
+**[GitHub](https://github.com/Henok-Enyew/top-player-linux)** ·
+**[Telegram](https://t.me/enoch90s)** ·
+**[Report an issue](https://github.com/Henok-Enyew/top-player-linux/issues)**
+
+<sub>Live TV channels come from <a href="https://github.com/iptv-org/iptv">iptv-org</a> and radio stations from
+<a href="https://www.radio-browser.info">Radio-Browser</a>; Top Player hosts no streams.</sub>
+
+</div>
