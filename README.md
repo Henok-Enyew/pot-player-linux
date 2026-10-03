@@ -150,6 +150,23 @@ When a file opens, the window resizes to 100% of the video resolution
 (shrunk to fit the screen if needed). Use **Window > Window Size** or
 `Alt+1`..`Alt+4` to change it.
 
+### Audio Control & Equalizer
+
+**Audio → Audio Control & Equalizer...** (`F7`) adjusts the sound as you
+move the controls:
+
+- **Preamp** (-10 to +10 dB), **Bass** (110 Hz) and **Treble** (3 kHz),
+  both -15 to +20 dB.
+- A **10-band equalizer** (31 Hz to 16 kHz, ±12 dB) with presets: **Flat**,
+  **Bass Boost**, **Club**, **Rock**, **Vocal Clear** and **Cinema/Action**.
+- **Loudness Normalization (Night Mode)** evens out loud and quiet passages.
+- **Reset to Default** turns everything off.
+
+The effects are one FFmpeg filter graph in mpv's `af` property (`volume`,
+`bass`, `treble`, `equalizer` and `dynaudnorm`), so they apply to video and
+audio files alike, and are saved in
+`~/.config/potplayer-linux/audio_settings.json` for the next start.
+
 ### Live TV & Radio
 
 Right-click → **Live TV & Radio...** (`Ctrl+L`) opens a browser for free
@@ -220,6 +237,7 @@ when the server can't be reached.
 | `Alt+L` / `Alt+Shift+L` | Next subtitle / next secondary subtitle |
 | `Alt+H` / `Alt+Shift+H` | Show / hide subtitles / secondary subtitles |
 | `D` | Download subtitles |
+| `F7` | Audio Control & Equalizer |
 | `Alt+Up` / `Alt+Down` | Move subtitles up / down |
 | `Alt+PgUp` / `Alt+PgDn` | Subtitle size |
 | `Ctrl+D` | Deinterlace |

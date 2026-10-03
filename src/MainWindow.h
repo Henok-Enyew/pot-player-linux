@@ -6,7 +6,9 @@
 #include <QTimer>
 #include <QUrl>
 
+class AudioControlDialog;
 class AudioController;
+class AudioEffectsController;
 class ControlBar;
 class EmptyStateWidget;
 class LiveStreamDialog;
@@ -50,6 +52,10 @@ public:
     bool startSession(bool restore);
     PlaylistController *playlist() const { return m_playlist; }
     AudioController *audio() const { return m_audio; }
+    AudioEffectsController *audioEffects() const { return m_audioEffects; }
+    // Audio -> Audio Control & Equalizer; created on first use.
+    void openAudioControlDialog();
+    AudioControlDialog *audioControlDialog() const { return m_audioControl; }
     void loadSubtitle(const QString &path);
     // Opens the OpenSubtitles search for the playing file.
     void openSubtitleDownloadDialog();
@@ -102,6 +108,8 @@ private:
     ThumbnailGenerator *m_thumbnails = nullptr;
     ThumbnailPopup *m_thumbnailPopup = nullptr;
     LiveStreamDialog *m_liveStreams = nullptr;
+    AudioEffectsController *m_audioEffects = nullptr;
+    AudioControlDialog *m_audioControl = nullptr;
     // The stream whose station name is set as mpv's force-media-title.
     QString m_streamUrl;
     QWidget *m_root = nullptr;

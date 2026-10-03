@@ -105,6 +105,9 @@ void PlayerMenu::buildAudioMenu()
                QKeySequence(Qt::CTRL | Qt::Key_Comma));
     addCommand(audio, tr("Reset Audio Delay"), {QStringLiteral("set"), QStringLiteral("audio-delay"), QStringLiteral("0")});
     audio->addSeparator();
+    addItem(audio, tr("Audio Control && Equalizer..."), [this] { m_window->openAudioControlDialog(); },
+            QKeySequence(Qt::Key_F7));
+    audio->addSeparator();
     buildVisualizationMenu(audio);
 }
 

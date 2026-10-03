@@ -39,8 +39,12 @@ add_library(pot-player-core OBJECT
     src/ArtworkExtractor.h
     src/AudioArtwork.cpp
     src/AudioArtwork.h
+    src/AudioControlDialog.cpp
+    src/AudioControlDialog.h
     src/AudioController.cpp
     src/AudioController.h
+    src/AudioEffects.cpp
+    src/AudioEffects.h
     src/AudioView.cpp
     src/AudioView.h
     src/ControlBar.cpp

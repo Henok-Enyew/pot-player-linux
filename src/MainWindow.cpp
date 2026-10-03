@@ -1,5 +1,7 @@
 #include "MainWindow.h"
+#include "AudioControlDialog.h"
 #include "AudioController.h"
+#include "AudioEffects.h"
 #include "ControlBar.h"
 #include "EmptyStateWidget.h"
 #include "LiveStreamDialog.h"
@@ -116,6 +118,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Stacked over the video in creation order: the audio view, then the start
     // screen, then the OSD on top.
     m_audio = new AudioController(m_mpv, this);
+    m_audioEffects = new AudioEffectsController(m_mpv, this);
     m_emptyState = new EmptyStateWidget(m_mpv);
     m_osd = new OsdWidget(m_mpv);
     m_menu = new PlayerMenu(m_mpv, this);
@@ -309,6 +312,15 @@ void MainWindow::openPlaylistDialog()
 void MainWindow::savePlaylistDialog()
 {
     m_playlist->savePlaylistDialog();
+}
+
+void MainWindow::openAudioControlDialog()
+{
+    if (!m_audioControl)
+        m_audioControl = new AudioControlDialog(m_audioEffects, this);
+    m_audioControl->show();
+    m_audioControl->raise();
+    m_audioControl->activateWindow();
 }
 
 void MainWindow::openLiveStreamDialog()
