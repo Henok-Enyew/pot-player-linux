@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(PotPlayerLinux
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "A lightweight Qt6 + libmpv media player for Linux"
     LANGUAGES CXX)
 
@@ -17,9 +17,18 @@ endif()
 
 include(GNUInstallDirs)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Network OpenGL OpenGLWidgets)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
+
+# OpenSubtitles.com needs an API key. One built in here is used unless the
+# user enters their own in the subtitle download settings. Release builds
+# take it from $OPENSUBTITLES_API_KEY or an untracked opensubtitles-api-key.txt.
+set(_opensubtitles_key "$ENV{OPENSUBTITLES_API_KEY}")
+if(_opensubtitles_key STREQUAL "" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opensubtitles-api-key.txt")
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/opensubtitles-api-key.txt" _opensubtitles_key LIMIT_COUNT 1)
+endif()
+set(POTPLAYER_OPENSUBTITLES_API_KEY "${_opensubtitles_key}" CACHE STRING "Built-in OpenSubtitles.com API key")
 
 option(POTPLAYER_BUILD_TESTS "Build the integration tests (need an X or Wayland display)" OFF)
 
@@ -49,6 +58,8 @@ add_library(pot-player-core OBJECT
     src/MpvHelpers.h
     src/MpvWidget.cpp
     src/MpvWidget.h
+    src/OpenSubtitlesClient.cpp
+    src/OpenSubtitlesClient.h
     src/OsdWidget.cpp
     src/OsdWidget.h
     src/PlayerMenu.cpp
@@ -63,6 +74,10 @@ add_library(pot-player-core OBJECT
     src/PlaylistSession.h
     src/SeekBar.cpp
     src/SeekBar.h
+    src/SubtitleDownloadDialog.cpp
+    src/SubtitleDownloadDialog.h
+    src/SubtitleSearch.cpp
+    src/SubtitleSearch.h
     src/Theme.cpp
     src/Theme.h
     src/ThumbnailGenerator.cpp
@@ -78,6 +93,7 @@ target_include_directories(pot-player-core PUBLIC src)
 
 target_compile_definitions(pot-player-core PUBLIC
     APP_VERSION="${PROJECT_VERSION}"
+    POTPLAYER_OPENSUBTITLES_API_KEY="${POTPLAYER_OPENSUBTITLES_API_KEY}"
     QT_NO_KEYWORDS
 )
 
@@ -89,6 +105,7 @@ target_link_libraries(pot-player-core PUBLIC
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
+    Qt6::Network
     Qt6::OpenGL
     Qt6::OpenGLWidgets
     PkgConfig::MPV
