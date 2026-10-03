@@ -60,8 +60,8 @@ public:
     // Sets a property asynchronously from its string form, e.g. ("speed", "1.5").
     void setMpvProperty(const QString &name, const QString &value);
 
-    // The OpenGL renderer and version the video is drawn with, e.g.
-    // "Mesa Intel(R) UHD Graphics 620 (OpenGL 4.6)"; empty until shown.
+    // The OpenGL renderer the video is drawn with, e.g. "Mesa Intel(R) UHD
+    // Graphics 620 (KBL GT2)"; empty until the widget is first shown.
     QString glRenderer() const { return m_glRenderer; }
 
     // Tracks of `type` ("video", "audio" or "sub") from mpv's track-list.

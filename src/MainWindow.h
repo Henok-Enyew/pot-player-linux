@@ -5,6 +5,8 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <optional>
+
 class AboutDialog;
 class AudioController;
 class ControlBar;
@@ -50,6 +52,8 @@ public:
     // Help -> About Top Player (F1).
     void showAbout();
     void toggleFullScreen();
+    // Leaves fullscreen for the maximized or normal geometry the window had before.
+    void exitFullScreen();
     void setAlwaysOnTop(bool onTop);
     // Resizes the window so the video shows at `scale` times its display size.
     void scaleToVideo(qreal scale);
@@ -64,6 +68,8 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -84,6 +90,7 @@ private:
     // it and the cursor again after a moment without mouse movement.
     void onMouseActivity(const QPoint &globalPos);
     Qt::Edges edgesAt(const QPoint &pos) const;
+    bool isOverVideo(const QPoint &globalPos) const;
 
     MpvWidget *m_mpv = nullptr;
     EmptyStateWidget *m_emptyState = nullptr;
@@ -99,6 +106,12 @@ private:
     QWidget *m_root = nullptr;
     QPointer<AboutDialog> m_about;
     QTimer m_idleTimer;
+    // A click on the video pauses once it is clear that no double click follows.
+    QTimer m_clickTimer;
+    // A left press on the video that may still become a click or a window drag.
+    std::optional<QPoint> m_videoPress;
+    QRect m_geometryBeforeFullScreen;
+    bool m_maximizedBeforeFullScreen = false;
     int m_hoverSecond = -1;
     QPoint m_popupAnchor;
     bool m_playlistBeforeFullScreen = false;

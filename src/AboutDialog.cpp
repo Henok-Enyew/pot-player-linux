@@ -108,6 +108,7 @@ AboutDialog::AboutDialog(MpvWidget *mpv, QWidget *parent)
     grid->setContentsMargins(14, 10, 14, 12);
     grid->setHorizontalSpacing(14);
     grid->setVerticalSpacing(4);
+    grid->setColumnStretch(1, 1);
     auto *heading = new QLabel(tr("System"), system);
     heading->setObjectName(QStringLiteral("AboutSystemHeading"));
     grid->addWidget(heading, 0, 0, 1, 2);
@@ -159,5 +160,5 @@ AboutDialog::AboutDialog(MpvWidget *mpv, QWidget *parent)
     layout->addSpacing(6);
     layout->addWidget(buttons);
 
-    setMinimumWidth(440);
+    setMinimumWidth(480);
 }

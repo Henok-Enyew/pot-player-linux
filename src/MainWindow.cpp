@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <utility>
 
 namespace {
 
@@ -148,6 +149,12 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupPlaylist();
     setupThumbnails();
+
+    m_clickTimer.setSingleShot(true);
+    connect(&m_clickTimer, &QTimer::timeout, this, [this] {
+        if (!m_mpv->isIdle())
+            m_mpv->togglePause();
+    });
 
     m_idleTimer.setSingleShot(true);
     m_idleTimer.setInterval(kIdleHideMs);
@@ -394,10 +401,26 @@ void MainWindow::openSubtitleSettingsDialog()
 
 void MainWindow::toggleFullScreen()
 {
-    if (isFullScreen())
-        showNormal();
-    else
-        showFullScreen();
+    if (isFullScreen()) {
+        exitFullScreen();
+        return;
+    }
+    m_maximizedBeforeFullScreen = isMaximized();
+    m_geometryBeforeFullScreen = m_maximizedBeforeFullScreen ? normalGeometry() : geometry();
+    showFullScreen();
+}
+
+void MainWindow::exitFullScreen()
+{
+    if (!isFullScreen())
+        return;
+    if (m_maximizedBeforeFullScreen) {
+        showMaximized();
+        return;
+    }
+    showNormal();
+    if (m_geometryBeforeFullScreen.isValid())
+        setGeometry(m_geometryBeforeFullScreen);
 }
 
 void MainWindow::setAlwaysOnTop(bool onTop)
@@ -520,6 +543,13 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         event->accept();
         return true;
     }
+    // Esc always leaves fullscreen, whichever widget has the keyboard.
+    if (event->type() == QEvent::KeyPress && isFullScreen() && watched->isWidgetType()
+        && static_cast<QWidget *>(watched)->window() == this
+        && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+        exitFullScreen();
+        return true;
+    }
     if (event->type() == QEvent::MouseMove && watched->isWidgetType()
         && static_cast<QWidget *>(watched)->window() == this) {
         onMouseActivity(static_cast<QMouseEvent *>(event)->globalPosition().toPoint());
@@ -565,8 +595,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         toggleFullScreen();
         break;
     case Qt::Key_Escape:
-        if (isFullScreen())
-            showNormal();
+        exitFullScreen();
         break;
     default:
         QMainWindow::keyPressEvent(event);
@@ -591,30 +620,69 @@ void MainWindow::wheelEvent(QWheelEvent *event)
 
 void MainWindow::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() != Qt::LeftButton || isFullScreen() || !windowHandle()) {
+    if (event->button() != Qt::LeftButton) {
         QMainWindow::mousePressEvent(event);
         return;
     }
+    const QPoint globalPos = event->globalPosition().toPoint();
+    const bool canMove = !isFullScreen() && windowHandle();
 
     // Without a frame, let the compositor move or resize the window for us.
-    const Qt::Edges edges = isMaximized() ? Qt::Edges() : edgesAt(mapFromGlobal(event->globalPosition().toPoint()));
-    if (edges)
+    const Qt::Edges edges = !canMove || isMaximized() ? Qt::Edges() : edgesAt(mapFromGlobal(globalPos));
+    if (edges) {
         windowHandle()->startSystemResize(edges);
-    else
+    } else if (isOverVideo(globalPos)) {
+        // Wait for the release (a click: pause) or for the pointer to move (a drag: move the window).
+        m_videoPress = globalPos;
+    } else if (canMove) {
         windowHandle()->startSystemMove();
+    } else {
+        QMainWindow::mousePressEvent(event);
+        return;
+    }
     event->accept();
+}
+
+void MainWindow::mouseMoveEvent(QMouseEvent *event)
+{
+    if (m_videoPress && (event->buttons() & Qt::LeftButton)
+        && (event->globalPosition().toPoint() - *m_videoPress).manhattanLength() >= QApplication::startDragDistance()) {
+        m_videoPress.reset();
+        if (!isFullScreen() && windowHandle())
+            windowHandle()->startSystemMove();
+        event->accept();
+        return;
+    }
+    QMainWindow::mouseMoveEvent(event);
+}
+
+void MainWindow::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && std::exchange(m_videoPress, std::nullopt)) {
+        // Toggling now would make every double click pause and resume playback.
+        m_clickTimer.start(QApplication::doubleClickInterval());
+        event->accept();
+        return;
+    }
+    QMainWindow::mouseReleaseEvent(event);
 }
 
 void MainWindow::mouseDoubleClickEvent(QMouseEvent *event)
 {
     // Only the video area toggles fullscreen; the title bar maximizes instead.
-    const QPoint videoPos = m_mpv->mapFromGlobal(event->globalPosition().toPoint());
-    if (event->button() == Qt::LeftButton && m_mpv->rect().contains(videoPos)) {
+    if (event->button() == Qt::LeftButton && isOverVideo(event->globalPosition().toPoint())) {
+        m_clickTimer.stop();
+        m_videoPress.reset();
         toggleFullScreen();
         event->accept();
         return;
     }
     QMainWindow::mouseDoubleClickEvent(event);
+}
+
+bool MainWindow::isOverVideo(const QPoint &globalPos) const
+{
+    return m_mpv->isVisible() && m_mpv->rect().contains(m_mpv->mapFromGlobal(globalPos));
 }
 
 void MainWindow::contextMenuEvent(QContextMenuEvent *event)
