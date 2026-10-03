@@ -10,6 +10,9 @@
 #include "MediaDownloaderDialog.h"
 #include "MediaFiles.h"
 #include "MpvWidget.h"
+#ifdef TOPPLAYER_HAVE_DBUS
+#include "MprisService.h"
+#endif
 #include "OsdWidget.h"
 #include "PlayerMenu.h"
 #include "PlaylistController.h"
@@ -61,6 +64,13 @@ constexpr qreal kMaxScreenFraction = 0.9;
 constexpr int kIdleHideMs = 2000;
 // Distance between the seekbar and the thumbnail popup above it.
 constexpr int kPopupGap = 6;
+// Swipe seeking: a drag across the whole video moves this far through the
+// file (or the whole file, if shorter), like VLC's seek gesture.
+constexpr double kSeekDragSpanSeconds = 180.0;
+// Seeks sent while dragging are spaced out by this much.
+constexpr int kSeekDragIntervalMs = 60;
+// A horizontal wheel notch (120 units) or touchpad swipe of the same size seeks this far.
+constexpr double kWheelSeekSeconds = 5.0;
 
 // Keys that a focused list keeps for its own navigation instead of letting the
 // player's shortcuts (volume, fullscreen) take them. A tree also keeps Left and
@@ -168,11 +178,26 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupPlaylist();
     setupThumbnails();
+#ifdef TOPPLAYER_HAVE_DBUS
+    // The desktop hands the keyboard's media keys to players over MPRIS.
+    auto *mpris = new MprisService(m_mpv, this, this);
+    connect(mpris, &MprisService::openRequested, this, &MainWindow::openFile);
+    m_mpris = mpris;
+#endif
 
     m_clickTimer.setSingleShot(true);
     connect(&m_clickTimer, &QTimer::timeout, this, [this] {
         if (!m_mpv->isIdle())
             m_mpv->togglePause();
+    });
+
+    m_seekDragTimer.setSingleShot(true);
+    m_seekDragTimer.setInterval(kSeekDragIntervalMs);
+    connect(&m_seekDragTimer, &QTimer::timeout, this, [this] {
+        // Keyframe seeks while dragging: quick, and the exact one follows on release.
+        if (m_seekDrag)
+            m_mpv->command({QStringLiteral("seek"), QString::number(m_seekDrag->target, 'f', 3),
+                            QStringLiteral("absolute+keyframes")});
     });
 
     m_idleTimer.setSingleShot(true);
@@ -405,12 +430,7 @@ void MainWindow::openUrls(const QList<QUrl> &urls)
             media.append(path);
     }
     if (!media.isEmpty()) {
-        MediaFiles::expandFoldersAsync(media, this, [this, subtitles](const QStringList &files) {
-            if (files.isEmpty())
-                m_osd->showValue(tr("No media files found"));
-            else
-                m_mpv->loadFiles(files, subtitles);
-        });
+        m_playlist->openEntries(media, subtitles);
     } else if (!subtitles.isEmpty()) {
         for (const QString &subtitle : std::as_const(subtitles))
             loadSubtitle(subtitle);
@@ -756,6 +776,11 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         event->accept();
         return true;
     }
+    // Esc cancels a swipe seek, returning to where it started.
+    if (event->type() == QEvent::KeyPress && m_seekDrag && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+        endSeekDrag(true);
+        return true;
+    }
     // Esc always leaves fullscreen, whichever widget has the keyboard.
     if (event->type() == QEvent::KeyPress && isFullScreen() && watched->isWidgetType()
         && static_cast<QWidget *>(watched)->window() == this
@@ -784,26 +809,9 @@ void MainWindow::onMouseActivity(const QPoint &globalPos)
 
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
-    // Everything else is a QAction shortcut registered by PlayerMenu.
+    // Everything else, the media keys included, is a QAction shortcut
+    // registered by PlayerMenu.
     switch (event->key()) {
-    case Qt::Key_MediaPlay:
-        m_mpv->play();
-        break;
-    case Qt::Key_MediaPause:
-        m_mpv->pause();
-        break;
-    case Qt::Key_MediaTogglePlayPause:
-        m_mpv->togglePause();
-        break;
-    case Qt::Key_MediaStop:
-        m_mpv->stop();
-        break;
-    case Qt::Key_MediaNext:
-        m_mpv->playlistNext();
-        break;
-    case Qt::Key_MediaPrevious:
-        m_mpv->playlistPrev();
-        break;
     case Qt::Key_Enter:
         toggleFullScreen();
         break;
@@ -825,14 +833,34 @@ void MainWindow::wheelEvent(QWheelEvent *event)
         return;
     }
     // One standard wheel notch is 120 units; scale to support high-resolution wheels.
-    const int delta = event->angleDelta().y();
-    if (delta != 0)
-        m_mpv->adjustVolume(kVolumeStep * delta / 120.0);
+    const QPoint angle = event->angleDelta();
+    if (std::abs(angle.x()) > std::abs(angle.y())) {
+        // Sideways (a touchpad swipe or a tilting wheel) seeks: scrolling right
+        // goes forward, as with mpv's WHEEL_RIGHT. Qt reports right as negative.
+        const int delta = -angle.x();
+        if (!m_mpv->isIdle()) {
+            m_wheelSeekRemainder += delta;
+            const double seconds = kWheelSeekSeconds * m_wheelSeekRemainder / 120.0;
+            // Touchpads report small steps: seek once a second's worth has built up.
+            if (std::abs(seconds) >= 1.0) {
+                m_wheelSeekRemainder = 0;
+                m_mpv->command({QStringLiteral("seek"), QString::number(seconds, 'f', 3), QStringLiteral("relative")});
+            }
+        }
+    } else if (angle.y() != 0) {
+        m_mpv->adjustVolume(kVolumeStep * angle.y() / 120.0);
+    }
     event->accept();
 }
 
 void MainWindow::mousePressEvent(QMouseEvent *event)
 {
+    // Another button during a swipe seek cancels it.
+    if (m_seekDrag && event->button() != Qt::LeftButton) {
+        endSeekDrag(true);
+        event->accept();
+        return;
+    }
     if (event->button() != Qt::LeftButton) {
         QMainWindow::mousePressEvent(event);
         return;
@@ -858,10 +886,20 @@ void MainWindow::mousePressEvent(QMouseEvent *event)
 
 void MainWindow::mouseMoveEvent(QMouseEvent *event)
 {
+    const QPoint globalPos = event->globalPosition().toPoint();
+    if (m_seekDrag && (event->buttons() & Qt::LeftButton)) {
+        updateSeekDrag(globalPos);
+        event->accept();
+        return;
+    }
     if (m_videoPress && (event->buttons() & Qt::LeftButton)
-        && (event->globalPosition().toPoint() - *m_videoPress).manhattanLength() >= QApplication::startDragDistance()) {
-        m_videoPress.reset();
-        if (!isFullScreen() && windowHandle())
+        && (globalPos - *m_videoPress).manhattanLength() >= QApplication::startDragDistance()) {
+        const QPoint origin = *std::exchange(m_videoPress, std::nullopt);
+        const QPoint delta = globalPos - origin;
+        // Sideways scrubs through the file; otherwise the drag moves the window.
+        if (std::abs(delta.x()) > std::abs(delta.y()) && beginSeekDrag(origin))
+            updateSeekDrag(globalPos);
+        else if (!isFullScreen() && windowHandle())
             windowHandle()->startSystemMove();
         event->accept();
         return;
@@ -869,8 +907,53 @@ void MainWindow::mouseMoveEvent(QMouseEvent *event)
     QMainWindow::mouseMoveEvent(event);
 }
 
+bool MainWindow::beginSeekDrag(const QPoint &origin)
+{
+    if (m_mpv->isIdle())
+        return false;
+    const double duration = m_mpv->mpvProperty(QStringLiteral("duration")).toDouble();
+    if (duration <= 0 || !m_mpv->mpvProperty(QStringLiteral("seekable")).toBool())
+        return false;
+    const double position = m_mpv->mpvProperty(QStringLiteral("time-pos")).toDouble();
+    m_seekDrag = SeekDrag{origin, position, position, duration};
+    m_clickTimer.stop();
+    m_mpv->setCursor(Qt::SizeHorCursor);
+    return true;
+}
+
+void MainWindow::updateSeekDrag(const QPoint &globalPos)
+{
+    const int width = std::max(1, m_mpv->width());
+    const double span = std::min(m_seekDrag->duration, kSeekDragSpanSeconds);
+    const double offset = (globalPos.x() - m_seekDrag->origin.x()) * span / width;
+    const double target = std::clamp(m_seekDrag->startTime + offset, 0.0, m_seekDrag->duration);
+    m_seekDrag->target = target;
+    m_osd->showSeek(target - m_seekDrag->startTime, target, m_seekDrag->duration);
+    m_controlBar->seekBar()->setPosition(target);
+    if (!m_seekDragTimer.isActive())
+        m_seekDragTimer.start();
+}
+
+void MainWindow::endSeekDrag(bool cancel)
+{
+    const std::optional<SeekDrag> drag = std::exchange(m_seekDrag, std::nullopt);
+    if (!drag)
+        return;
+    m_seekDragTimer.stop();
+    m_mpv->unsetCursor();
+    const double target = cancel ? drag->startTime : drag->target;
+    m_mpv->command({QStringLiteral("seek"), QString::number(target, 'f', 3), QStringLiteral("absolute+exact")});
+    if (cancel)
+        m_osd->showTime(target, drag->duration);
+}
+
 void MainWindow::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton && m_seekDrag) {
+        endSeekDrag(false);
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton && std::exchange(m_videoPress, std::nullopt)) {
         // Toggling now would make every double click pause and resume playback.
         m_clickTimer.start(QApplication::doubleClickInterval());

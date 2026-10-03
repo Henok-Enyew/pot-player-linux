@@ -7,6 +7,8 @@
 #include <QFileDialog>
 
 #include <cmath>
+#include <functional>
+#include <utility>
 #include <optional>
 
 namespace {
@@ -225,6 +227,24 @@ void PlayerMenu::buildPlaybackMenu()
     addItem(playback, tr("Stop"), [this] { m_mpv->stop(); });
     addItem(playback, tr("Previous File"), [this] { m_mpv->playlistPrev(); }, QKeySequence(Qt::Key_PageUp));
     addItem(playback, tr("Next File"), [this] { m_mpv->playlistNext(); }, QKeySequence(Qt::Key_PageDown));
+    // The keyboard's media keys, wherever the focus is in the app (a list,
+    // a dialog). Outside the app, the desktop sends them over MPRIS.
+    const std::pair<Qt::Key, std::function<void()>> mediaKeys[]{
+        {Qt::Key_MediaPlay, [this] { m_mpv->play(); }},
+        {Qt::Key_MediaPause, [this] { m_mpv->pause(); }},
+        {Qt::Key_MediaTogglePlayPause, [this] { m_mpv->togglePause(); }},
+        {Qt::Key_MediaStop, [this] { m_mpv->stop(); }},
+        {Qt::Key_MediaNext, [this] { m_mpv->playlistNext(); }},
+        {Qt::Key_MediaPrevious, [this] { m_mpv->playlistPrev(); }},
+    };
+    for (const auto &[key, handler] : mediaKeys) {
+        auto *action = new QAction(this);
+        action->setObjectName(QStringLiteral("MediaKeyAction"));
+        action->setShortcut(QKeySequence(key));
+        action->setShortcutContext(Qt::ApplicationShortcut);
+        connect(action, &QAction::triggered, this, handler);
+        m_window->addAction(action);
+    }
     playback->addSeparator();
     addCommand(playback, tr("Seek Forward 5s"), {QStringLiteral("seek"), QStringLiteral("5"), QStringLiteral("relative")},
                QKeySequence(Qt::Key_Right));

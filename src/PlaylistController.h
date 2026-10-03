@@ -48,6 +48,11 @@ public:
     void openPlaylist(const QString &path);
     // Replaces the playlist with the media files in `folder` and its subfolders.
     void openFolder(const QString &folder);
+    // Replaces the playlist with `entries`, expanding folders in a worker
+    // thread first; `subtitles` are added to the first file.
+    void openEntries(const QStringList &entries, const QStringList &subtitles = {});
+    // Asks for a URL and queues it.
+    void addUrlDialog();
 
     void sort(PlaylistOps::SortKey key, bool ascending);
     void reverse();

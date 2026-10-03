@@ -223,8 +223,9 @@ void AudioTest::cleanup()
 
 void AudioTest::open(const QString &file)
 {
-    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
     m_window->openFile(file);
+    // Opening plays; pause right after (the commands run in order).
+    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
     QTRY_COMPARE_WITH_TIMEOUT(propString("path"), file, 10000);
     QTRY_VERIFY_WITH_TIMEOUT(prop("time-pos").isValid(), 10000);
 }
@@ -480,8 +481,9 @@ void AudioTest::audioTrackSwitching()
 void AudioTest::videoAfterAudio()
 {
     m_audio->setVisualization(AudioArtwork::Visualization::Spectrum);
-    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
     m_window->openFiles({m_plain, m_video});
+    // Opening plays; pause right after (the commands run in order).
+    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
     QTRY_VERIFY_WITH_TIMEOUT(propString("lavfi-complex").contains(QLatin1String("showfreqs")), 10000);
 
     // The graph and the hidden video track belonged to the audio file only.

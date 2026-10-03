@@ -127,11 +127,17 @@ private:
     void onMouseActivity(const QPoint &globalPos);
     Qt::Edges edgesAt(const QPoint &pos) const;
     bool isOverVideo(const QPoint &globalPos) const;
+    // Swipe seeking: starts a drag at `globalPos`, follows it, and ends it
+    // (seeking there, or back to where it started if `cancel`).
+    bool beginSeekDrag(const QPoint &origin);
+    void updateSeekDrag(const QPoint &globalPos);
+    void endSeekDrag(bool cancel);
 
     MpvWidget *m_mpv = nullptr;
     EmptyStateWidget *m_emptyState = nullptr;
     OsdWidget *m_osd = nullptr;
     PlayerMenu *m_menu = nullptr;
+    QObject *m_mpris = nullptr; // MprisService, when built with D-Bus
     TitleBar *m_titleBar = nullptr;
     ControlBar *m_controlBar = nullptr;
     PlaylistDrawer *m_drawer = nullptr;
@@ -153,6 +159,19 @@ private:
     QTimer m_clickTimer;
     // A left press on the video that may still become a click or a window drag.
     std::optional<QPoint> m_videoPress;
+    // A horizontal drag on the video scrubs through the file (as in VLC):
+    // where it started, the time then, the time it points at now, and the
+    // timer that spaces out the seeks sent while dragging.
+    struct SeekDrag {
+        QPoint origin;
+        double startTime = 0;
+        double target = 0;
+        double duration = 0;
+    };
+    std::optional<SeekDrag> m_seekDrag;
+    QTimer m_seekDragTimer;
+    // Horizontal wheel (touchpad swipe, tilt wheel) units not yet turned into a seek.
+    int m_wheelSeekRemainder = 0;
     QRect m_geometryBeforeFullScreen;
     bool m_maximizedBeforeFullScreen = false;
     int m_hoverSecond = -1;

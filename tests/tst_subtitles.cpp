@@ -325,8 +325,9 @@ void SubtitleTest::init()
     QVERIFY(QTest::qWaitForWindowActive(m_window));
     m_mpv = m_window->findChild<MpvWidget *>();
     QVERIFY(m_mpv);
-    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
     m_window->openFile(m_video);
+    // Opening plays; pause right after (the commands run in order).
+    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
     QTRY_VERIFY_WITH_TIMEOUT(prop("time-pos").isValid(), 10000);
     m_mpv->setFocus();
 }

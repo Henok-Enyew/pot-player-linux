@@ -80,6 +80,10 @@ bool isBatchable(const QString &entry)
     return !entry.contains(QLatin1String("://")) || entry.startsWith(QLatin1String("file://"));
 }
 
+// How often widgets mirroring the playback position are updated: smooth
+// enough for the seekbar, and a fraction of the per-frame reports.
+constexpr int kTimePosIntervalMs = 100;
+
 // Well below the ~1000 unanswered requests mpv accepts per client.
 constexpr int kMaxPendingReplies = 256;
 
@@ -109,6 +113,11 @@ MpvWidget::MpvWidget(QWidget *parent)
     // Like PotPlayer, pick up subtitles next to the video or in a subtitle folder.
     mpv_set_option_string(m_mpv, "sub-auto", "fuzzy");
     mpv_set_option_string(m_mpv, "sub-file-paths", "sub:subs:subtitles:Subs:Subtitles");
+    // Decode with as many threads as there are cores, and keep enough of the
+    // stream around that seeking back and forth is served from memory.
+    mpv_set_option_string(m_mpv, "vd-lavc-threads", "0");
+    mpv_set_option_string(m_mpv, "demuxer-max-bytes", "150MiB");
+    mpv_set_option_string(m_mpv, "demuxer-max-back-bytes", "75MiB");
     mpv_set_option_string(m_mpv, "terminal", "yes");
     mpv_set_option_string(m_mpv, "msg-level", "all=warn");
 
@@ -123,6 +132,11 @@ MpvWidget::MpvWidget(QWidget *parent)
     for (const char *name : kStateProperties)
         m_stateProperties.insert(QString::fromLatin1(name));
     mpv_set_wakeup_callback(m_mpv, &MpvWidget::onMpvWakeup, this);
+
+    m_timePosTimer = new QTimer(this);
+    m_timePosTimer->setSingleShot(true);
+    m_timePosTimer->setInterval(kTimePosIntervalMs);
+    connect(m_timePosTimer, &QTimer::timeout, this, &MpvWidget::flushTimePos);
 }
 
 MpvWidget::~MpvWidget()
@@ -145,7 +159,7 @@ void MpvWidget::loadFiles(const QStringList &files, const QStringList &subtitles
     if (files.isEmpty())
         return;
     m_pendingSubtitles = subtitles;
-    const QList<QStringList> commands = queueCommands(files, QStringLiteral("replace"));
+    const QList<QStringList> commands = replacing(queueCommands(files, QStringLiteral("replace")));
 
     if (!m_renderCtx) {
         m_pendingLoads.clear();
@@ -173,6 +187,7 @@ void MpvWidget::loadStream(const QString &url, const QVariantMap &options, bool 
     m_pendingSubtitles.clear();
     if (!m_renderCtx)
         m_pendingLoads.clear();
+    runOrDefer(replacing({}));
     runOrDefer(cmd);
 }
 
@@ -188,18 +203,16 @@ void MpvWidget::playFiles(const QStringList &files, int start)
     commands.append(queueCommands(files, QStringLiteral("append")));
     start = std::min(start, static_cast<int>(files.size()) - 1);
     commands.append({QStringLiteral("playlist-play-index"), QString::number(start)});
-    runOrDefer(commands);
+    runOrDefer(replacing(commands));
 }
 
 void MpvWidget::loadPlaylist(const QString &path)
 {
     m_pendingSubtitles.clear();
-    const QStringList cmd{QStringLiteral("loadlist"), path, QStringLiteral("replace")};
-    if (!m_renderCtx) {
-        m_pendingLoads = {{cmd, {}}};
-        return;
-    }
-    command(cmd);
+    const QList<QStringList> commands = replacing({{QStringLiteral("loadlist"), path, QStringLiteral("replace")}});
+    if (!m_renderCtx)
+        m_pendingLoads.clear();
+    runOrDefer(commands);
 }
 
 void MpvWidget::loadTitledFiles(const QStringList &files, const QStringList &titles)
@@ -215,7 +228,7 @@ void MpvWidget::loadTitledFiles(const QStringList &files, const QStringList &tit
     m_pendingSubtitles.clear();
     if (!m_renderCtx)
         m_pendingLoads.clear();
-    runOrDefer({{QStringLiteral("loadlist"), list, QStringLiteral("replace")}});
+    runOrDefer(replacing({{QStringLiteral("loadlist"), list, QStringLiteral("replace")}}));
 }
 
 void MpvWidget::restorePlaylist(const QStringList &files, int current, double resumeAt)
@@ -228,6 +241,9 @@ void MpvWidget::restorePlaylist(const QStringList &files, int current, double re
     commands.append(queueCommands(files, QStringLiteral("append")));
     current = std::clamp(current, -1, static_cast<int>(files.size()) - 1);
     m_lastPlaylistPos = current;
+    // Restored paused on purpose (see resumeAt); only the ticket changes.
+    if (!std::exchange(m_continueReplace, false))
+        ++m_replaceTicket;
     if (resumeAt >= 0 && current >= 0) {
         // The "start" option is global; it is reset once this file has loaded.
         m_resetStart = true;
@@ -261,7 +277,10 @@ void MpvWidget::insertFiles(const QStringList &files, int row)
 {
     if (files.isEmpty())
         return;
-    const QList<QStringList> commands = queueCommands(files, QStringLiteral("append-play"));
+    QList<QStringList> commands = queueCommands(files, QStringLiteral("append-play"));
+    // append-play starts an idle player: like an open, that should not be paused.
+    if (!m_renderCtx || isIdle())
+        commands.prepend({QStringLiteral("set"), QStringLiteral("pause"), QStringLiteral("no")});
     if (!m_renderCtx) {
         runOrDefer(commands);
         return;
@@ -308,6 +327,14 @@ QList<QStringList> MpvWidget::queueCommands(const QStringList &files, const QStr
         }
     }
     flush();
+    return commands;
+}
+
+QList<QStringList> MpvWidget::replacing(QList<QStringList> commands)
+{
+    if (!std::exchange(m_continueReplace, false))
+        ++m_replaceTicket;
+    commands.prepend({QStringLiteral("set"), QStringLiteral("pause"), QStringLiteral("no")});
     return commands;
 }
 
@@ -546,6 +573,7 @@ void MpvWidget::initializeGL()
         throw std::runtime_error("failed to initialize mpv GL context");
 
     mpv_render_context_set_update_callback(m_renderCtx, &MpvWidget::onMpvRenderUpdate, this);
+    connect(this, &QOpenGLWidget::frameSwapped, this, &MpvWidget::onFrameSwapped, Qt::UniqueConnection);
 
     m_glRenderer = QString::fromLatin1(reinterpret_cast<const char *>(context()->functions()->glGetString(GL_RENDERER)));
 
@@ -596,6 +624,13 @@ void MpvWidget::paintGL()
     gl->glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 }
 
+void MpvWidget::onFrameSwapped()
+{
+    // Lets mpv time its frames against the real presentation.
+    if (m_renderCtx && !m_idle)
+        mpv_render_context_report_swap(m_renderCtx);
+}
+
 void MpvWidget::processMpvEvents()
 {
     while (m_mpv) {
@@ -621,6 +656,16 @@ void MpvWidget::processMpvEvents()
                     update();
                 } else if (name == QLatin1String("playlist-pos") && value.toInt() >= 0) {
                     m_lastPlaylistPos = value.toInt();
+                } else if (name == QLatin1String("time-pos")) {
+                    m_timePos = value;
+                    m_timePosPending = true;
+                    // The first report after a pause goes out at once; the
+                    // rest at most every kTimePosIntervalMs.
+                    if (!m_timePosTimer->isActive()) {
+                        flushTimePos();
+                        m_timePosTimer->start();
+                    }
+                    break;
                 }
                 Q_EMIT propertyUpdated(name, value);
                 if (!m_stateProperties.contains(name)) {
@@ -643,6 +688,7 @@ void MpvWidget::processMpvEvents()
             sendQueuedCommands();
             break;
         case MPV_EVENT_START_FILE:
+            flushTimePos();
             m_fileLoaded = false;
             m_audioOnly = false;
             m_seeking = false;
@@ -701,6 +747,8 @@ void MpvWidget::processMpvEvents()
             }
             break;
         case MPV_EVENT_PLAYBACK_RESTART:
+            // Show where a seek landed without waiting for the next tick.
+            flushTimePos();
             if (m_seeking) {
                 m_seeking = false;
                 Q_EMIT seeked();
@@ -710,6 +758,13 @@ void MpvWidget::processMpvEvents()
             break;
         }
     }
+}
+
+void MpvWidget::flushTimePos()
+{
+    if (!std::exchange(m_timePosPending, false))
+        return;
+    Q_EMIT propertyUpdated(QStringLiteral("time-pos"), m_timePos);
 }
 
 void MpvWidget::onRenderUpdate()

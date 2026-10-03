@@ -95,6 +95,9 @@ private Q_SLOTS:
     void openPlaylistKeepsTitlesAndSkipsMissing();
     void openPlaylistFeedback();
     void folderFeedback();
+    void openFolderReplacesPlayingPlaylist();
+    void staleOpenIsDropped();
+    void openStartsPlayback();
     void savePlaylistDialogAddsSuffix();
     void sessionRestore();
     void sessionDisabled();
@@ -192,9 +195,10 @@ QStringList PlaylistTest::viewFiles() const
 
 void PlaylistTest::load(const QStringList &files, int current)
 {
-    // Short clips would otherwise play through the whole playlist mid-test.
-    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
     m_window->openFiles(files);
+    // Opening plays; short clips would otherwise play through the whole
+    // playlist mid-test, so pause right after (the commands run in order).
+    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
     QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), files, 10000);
     // playlist-pos moves to a new entry before the old one is unloaded;
     // playlist-playing-pos only once the new one opens.
@@ -586,6 +590,71 @@ void PlaylistTest::folderFeedback()
     QTRY_COMPARE(lastMessage(), QStringLiteral("Folder not found|gone-folder"));
     QTest::qWait(200);
     QCOMPARE(mpvFiles().size(), 6);
+}
+
+void PlaylistTest::openFolderReplacesPlayingPlaylist()
+{
+    // A playlist is playing; opening a folder must replace it, not add to it.
+    const QString list = m_dir.filePath(QStringLiteral("replace-me.m3u8"));
+    QFile file(list);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    file.write(("#EXTM3U\n" + m_expected[3] + "\n" + m_expected[4] + "\n").toUtf8());
+    file.close();
+    m_window->playlist()->openPlaylist(list);
+    QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), (QStringList{m_expected[3], m_expected[4]}), 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(prop("time-pos").isValid(), 10000);
+
+    m_window->playlist()->openFolder(m_show + QStringLiteral("/Extras"));
+    QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), QStringList{m_expected[4]}, 10000);
+    m_window->playlist()->openFolder(m_show);
+    QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), m_expected, 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(prop("path").toString(), m_expected[0], 10000);
+    QTest::qWait(300);
+    QCOMPARE(mpvFiles(), m_expected);
+    QTRY_COMPARE(viewFiles(), m_expected);
+}
+
+void PlaylistTest::staleOpenIsDropped()
+{
+    // Two opens in a row: whichever result arrives last, the newest open wins.
+    m_window->playlist()->openFolder(m_show);
+    m_window->playlist()->openFolder(m_show + QStringLiteral("/Extras"));
+    QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), QStringList{m_expected[4]}, 10000);
+    QTest::qWait(500);
+    QCOMPARE(mpvFiles(), QStringList{m_expected[4]});
+
+    // An add still scanning when a new open replaces the list is dropped too.
+    m_window->playlist()->addFolder(m_show);
+    m_window->playlist()->openFolder(m_show + QStringLiteral("/Extras"));
+    QTest::qWait(500);
+    QCOMPARE(mpvFiles(), QStringList{m_expected[4]});
+}
+
+void PlaylistTest::openStartsPlayback()
+{
+    // A pause (or the pause keep-open leaves at the end of a file) must not
+    // carry over to newly opened media.
+    load(m_expected);
+    QVERIFY(prop("pause").toBool());
+    m_window->playlist()->openFolder(m_show + QStringLiteral("/Extras"));
+    QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), QStringList{m_expected[4]}, 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(prop("time-pos").isValid(), 10000);
+    QTRY_VERIFY(!prop("pause").toBool());
+
+    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
+    QTRY_VERIFY(prop("pause").toBool());
+    m_window->openFiles({m_expected[1]});
+    QTRY_COMPARE_WITH_TIMEOUT(prop("path").toString(), m_expected[1], 10000);
+    QTRY_VERIFY(!prop("pause").toBool());
+
+    // Queueing into a stopped player starts it unpaused as well.
+    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
+    m_mpv->command({QStringLiteral("playlist-clear")});
+    m_mpv->command({QStringLiteral("stop")});
+    QTRY_VERIFY(m_mpv->isIdle());
+    m_mpv->insertFiles({m_expected[2]});
+    QTRY_COMPARE_WITH_TIMEOUT(prop("path").toString(), m_expected[2], 10000);
+    QTRY_VERIFY(!prop("pause").toBool());
 }
 
 void PlaylistTest::savePlaylistDialogAddsSuffix()
