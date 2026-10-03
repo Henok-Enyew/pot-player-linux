@@ -2,16 +2,19 @@
 #include "Icons.h"
 #include "MediaFiles.h"
 #include "PlaylistOps.h"
+#include "Theme.h"
 
 #include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QFrame>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QToolButton>
 #include <QTreeWidgetItemIterator>
 #include <QUrl>
@@ -28,8 +31,14 @@ constexpr int kPathRole = Qt::UserRole + 1;
 constexpr int kLoadedRole = Qt::UserRole + 2;
 // Set on the folders and playlists stored in the library (not their contents).
 constexpr int kStoredRole = Qt::UserRole + 3;
+// Set on the rows that run an action when clicked (the hints in an empty section).
+constexpr int kActionRole = Qt::UserRole + 4;
+enum class RowAction { AddFolder = 1, SaveQueue };
+// Section headers remember whether they were folded under these keys.
+const QString kFoldersKey = QStringLiteral("section:folders");
+const QString kPlaylistsKey = QStringLiteral("section:playlists");
 
-const QColor kMutedColor(0x7A, 0x7A, 0x7A);
+const QColor kMutedColor(0x8A, 0x8F, 0x9C);
 const QColor kMissingColor(0x8A, 0x5A, 0x5A);
 
 using EntryType = LibraryPanel::EntryType;
@@ -57,6 +66,18 @@ QString itemKey(const QTreeWidgetItem *item)
 MediaLibrary::Kind kindOf(EntryType type)
 {
     return type == EntryType::Folder ? MediaLibrary::Kind::Folder : MediaLibrary::Kind::Playlist;
+}
+
+// A hint row that does something when clicked, e.g. "Add a folder...".
+QTreeWidgetItem *addActionRow(QTreeWidgetItem *parent, const QString &text, RowAction action)
+{
+    auto *item = new QTreeWidgetItem(parent, {text});
+    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+    item->setData(0, kActionRole, static_cast<int>(action));
+    item->setIcon(0, skinIcon(IconType::Add));
+    item->setForeground(0, Theme::Accent);
+    item->setToolTip(0, text);
+    return item;
 }
 
 QTreeWidgetItem *addPlaceholder(QTreeWidgetItem *parent, const QString &text)
@@ -143,6 +164,14 @@ QMimeData *LibraryView::mimeData(const QList<QTreeWidgetItem *> &items) const
     return mime;
 }
 
+void LibraryView::mousePressEvent(QMouseEvent *event)
+{
+    // Left of the item's rectangle is the tree's arrow, which folds the row itself.
+    const QModelIndex index = indexAt(event->position().toPoint());
+    m_pressedOnBranch = index.isValid() && event->position().x() < visualRect(index).left();
+    QTreeWidget::mousePressEvent(event);
+}
+
 void LibraryView::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Delete) {
@@ -166,24 +195,17 @@ LibraryPanel::LibraryPanel(QWidget *parent)
 {
     setObjectName(QStringLiteral("LibraryPanel"));
 
-    auto makeButton = [this](IconType icon, const QString &toolTip, const char *name) {
-        auto *button = new QToolButton(this);
-        button->setObjectName(QString::fromLatin1(name));
-        button->setIcon(skinIcon(icon));
-        button->setIconSize(QSize(16, 16));
-        button->setToolTip(toolTip);
-        button->setAutoRaise(true);
-        button->setFocusPolicy(Qt::NoFocus);
-        return button;
-    };
-    QToolButton *addFolder = makeButton(IconType::Folder, tr("Add Folder to Library..."), "LibraryAddFolderButton");
-    QToolButton *addPlaylist = makeButton(IconType::Open, tr("Add Playlist File to Library..."), "LibraryAddPlaylistButton");
-    QToolButton *saveQueue = makeButton(IconType::Add, tr("Save Current Playlist to Library..."), "LibrarySaveButton");
-    m_removeButton = makeButton(IconType::Remove, tr("Remove from Library (Del)"), "LibraryRemoveButton");
+    // The bar along the bottom, like the playlist's.
+    auto *bar = new QFrame(this);
+    bar->setObjectName(QStringLiteral("LibraryActionBar"));
+    QToolButton *addFolder = Theme::barButton(bar, tr("+ FOLDER"), tr("Add Folder to Library..."), "LibraryAddFolderButton");
+    QToolButton *addPlaylist = Theme::barButton(bar, tr("+ LIST"), tr("Add Playlist File to Library..."), "LibraryAddPlaylistButton");
+    QToolButton *saveQueue = Theme::barButton(bar, tr("SAVE"), tr("Save Current Playlist to Library..."), "LibrarySaveButton");
+    m_removeButton = Theme::barButton(bar, tr("DEL"), tr("Remove from Library (Del)"), "LibraryRemoveButton");
 
-    auto *tools = new QHBoxLayout;
-    tools->setContentsMargins(8, 2, 6, 6);
-    tools->setSpacing(2);
+    auto *tools = new QHBoxLayout(bar);
+    tools->setContentsMargins(6, 5, 6, 6);
+    tools->setSpacing(3);
     for (QToolButton *button : {addFolder, addPlaylist, saveQueue})
         tools->addWidget(button);
     tools->addStretch();
@@ -192,8 +214,8 @@ LibraryPanel::LibraryPanel(QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    layout->addLayout(tools);
     layout->addWidget(m_view, 1);
+    layout->addWidget(bar);
 
     m_view->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_view, &QWidget::customContextMenuRequested, this, &LibraryPanel::showContextMenu);
@@ -201,12 +223,23 @@ LibraryPanel::LibraryPanel(QWidget *parent)
     connect(m_view, &QTreeWidget::itemExpanded, this, [this](QTreeWidgetItem *item) {
         if (hasType(item))
             m_expandedKeys.insert(itemKey(item));
+        else if (item == m_folders || item == m_playlists)
+            m_collapsedSections.remove(item == m_folders ? kFoldersKey : kPlaylistsKey);
     });
     connect(m_view, &QTreeWidget::itemCollapsed, this, [this](QTreeWidgetItem *item) {
         if (hasType(item))
             m_expandedKeys.remove(itemKey(item));
+        else if (item == m_folders || item == m_playlists)
+            m_collapsedSections.insert(item == m_folders ? kFoldersKey : kPlaylistsKey);
     });
+    // A click opens or folds a section, folder or playlist (as in PotPlayer),
+    // and runs a hint row's action; a double click (or Enter) plays.
+    connect(m_view, &QTreeWidget::itemClicked, this, &LibraryPanel::onItemClicked);
     connect(m_view, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
+        if (item && item->data(0, kActionRole).isValid()) {
+            runRowAction(item);
+            return;
+        }
         if (!hasType(item))
             return;
         // An entry of a playlist plays the playlist from that entry.
@@ -241,33 +274,35 @@ void LibraryPanel::rebuild()
     const QString current = m_view->currentItem() && hasType(m_view->currentItem()) ? itemKey(m_view->currentItem()) : QString();
     m_view->clear();
 
-    auto addSection = [this](const QString &title) {
+    // Section headers: clickable, foldable rows with an icon and a count.
+    auto addSection = [this](const QString &title, IconType icon) {
         auto *section = new QTreeWidgetItem(m_view, {title});
-        section->setFlags(Qt::ItemIsEnabled);
-        section->setForeground(0, kMutedColor);
+        section->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        section->setIcon(0, skinIcon(icon));
         QFont font = section->font(0);
         font.setBold(true);
         section->setFont(0, font);
-        section->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
+        section->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+        section->setToolTip(0, tr("Click to show or hide"));
         return section;
     };
     const QList<MediaLibrary::Item> folders = m_library ? m_library->items(MediaLibrary::Kind::Folder) : QList<MediaLibrary::Item>();
     const QList<MediaLibrary::Item> playlists = m_library ? m_library->items(MediaLibrary::Kind::Playlist) : QList<MediaLibrary::Item>();
-    m_folders = addSection(tr("Folders (%1)").arg(folders.size()));
-    m_playlists = addSection(tr("Playlists (%1)").arg(playlists.size()));
+    m_folders = addSection(tr("Folders (%1)").arg(folders.size()), IconType::Folder);
+    m_playlists = addSection(tr("Playlists (%1)").arg(playlists.size()), IconType::Playlist);
 
     for (const MediaLibrary::Item &folder : folders)
         addEntry(m_folders, EntryType::Folder, folder.path, folder.name)->setData(0, kStoredRole, true);
     for (const MediaLibrary::Item &playlist : playlists)
         addEntry(m_playlists, EntryType::Playlist, playlist.path, playlist.name)->setData(0, kStoredRole, true);
     if (folders.isEmpty())
-        addPlaceholder(m_folders, tr("Add folders to find them here"));
+        addActionRow(m_folders, tr("Add a folder..."), RowAction::AddFolder);
     if (playlists.isEmpty())
-        addPlaceholder(m_playlists, tr("Save the playlist to keep it here"));
+        addActionRow(m_playlists, tr("Save the current playlist..."), RowAction::SaveQueue);
 
     // Expanding lists the children, which re-expand in turn.
     for (QTreeWidgetItem *section : {m_folders, m_playlists}) {
-        section->setExpanded(true);
+        section->setExpanded(!m_collapsedSections.contains(section == m_folders ? kFoldersKey : kPlaylistsKey));
         for (int i = 0; i < section->childCount(); ++i) {
             QTreeWidgetItem *item = section->child(i);
             if (hasType(item) && m_expandedKeys.contains(itemKey(item)))
@@ -324,6 +359,38 @@ void LibraryPanel::populate(QTreeWidgetItem *item)
         QTreeWidgetItem *child = item->child(i);
         if (hasType(child) && typeOf(child) != EntryType::File && m_expandedKeys.contains(itemKey(child)))
             child->setExpanded(true);
+    }
+}
+
+void LibraryPanel::onItemClicked(QTreeWidgetItem *item)
+{
+    if (!item)
+        return;
+    if (item->data(0, kActionRole).isValid()) {
+        runRowAction(item);
+        return;
+    }
+    const bool foldable = item == m_folders || item == m_playlists
+        || (hasType(item) && typeOf(item) != EntryType::File);
+    if (!foldable)
+        return;
+    // A click on the arrow already toggled the row.
+    if (m_view->pressedOnBranch())
+        return;
+    if (!item->isExpanded())
+        populate(item);
+    item->setExpanded(!item->isExpanded());
+}
+
+void LibraryPanel::runRowAction(QTreeWidgetItem *item)
+{
+    switch (static_cast<RowAction>(item->data(0, kActionRole).toInt())) {
+    case RowAction::AddFolder:
+        Q_EMIT addFolderRequested();
+        break;
+    case RowAction::SaveQueue:
+        Q_EMIT saveQueueRequested();
+        break;
     }
 }
 

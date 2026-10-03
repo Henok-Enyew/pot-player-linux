@@ -1,5 +1,8 @@
 #pragma once
 
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QLineEdit>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QString>
@@ -19,4 +22,17 @@ inline bool makeTestClip(const QString &path, int seconds = 600)
                            QStringLiteral("-c:v"), QStringLiteral("mpeg4"), QStringLiteral("-g"), QStringLiteral("2"),
                            path});
     return process.waitForFinished(60000) && process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+}
+
+// Picks `path` in an open file dialog, as a user typing it would.
+// selectFile() leaves the file name field alone while it has the focus, which
+// it does in an active window, and the dialog then keeps an old selection.
+inline void chooseInDialog(QFileDialog *dialog, const QString &path)
+{
+    if (auto *name = dialog->findChild<QLineEdit *>(QStringLiteral("fileNameEdit"))) {
+        dialog->setDirectory(QFileInfo(path).absolutePath());
+        name->setText(path);
+    } else {
+        dialog->selectFile(path);
+    }
 }

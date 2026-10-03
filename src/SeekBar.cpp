@@ -4,6 +4,7 @@
 #include <QPainter>
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -31,8 +32,11 @@ void SeekBar::setDuration(double seconds)
 
 void SeekBar::setPosition(double seconds)
 {
+    const qreal oldX = xFor(m_position);
     m_position = seconds;
-    if (!m_dragging)
+    // On a long file most position updates move the bar by less than a
+    // device pixel; skip repainting for those.
+    if (!m_dragging && std::abs(xFor(seconds) - oldX) * devicePixelRatioF() >= 0.5)
         update();
 }
 

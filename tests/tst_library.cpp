@@ -22,6 +22,7 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QSignalSpy>
 #include <QTest>
 #include <QTimer>
 #include <QToolButton>
@@ -75,6 +76,7 @@ private Q_SLOTS:
     void deleteOwnedPlaylist();
     void dragToResize();
     void expandButton();
+    void sectionsAreClickable();
 
 private:
     QVariant prop(const char *name) const { return m_mpv->mpvProperty(QString::fromLatin1(name)); }
@@ -256,7 +258,7 @@ void LibraryTest::addFolderButton()
 {
     whenDialogOpens<QFileDialog>([&](QFileDialog *dialog) {
         dialog->setDirectory(m_dir.path());
-        dialog->selectFile(m_show);
+        chooseInDialog(dialog, m_show);
         static_cast<QDialog *>(dialog)->accept();
     });
     auto *button = m_panel->findChild<QToolButton *>(QStringLiteral("LibraryAddFolderButton"));
@@ -367,6 +369,51 @@ void LibraryTest::dragToResize()
     m_drawer->setPreferredWidth(5000);
     QCOMPARE(m_drawer->width(), m_drawer->maximumDrawerWidth());
     QVERIFY(m_mpv->width() >= 150);
+}
+
+void LibraryTest::sectionsAreClickable()
+{
+    QTreeWidget *view = m_panel->view();
+    QTRY_VERIFY(view->isVisible());
+    QTreeWidgetItem *folders = view->topLevelItem(0);
+    QTreeWidgetItem *playlists = view->topLevelItem(1);
+    QVERIFY(folders && playlists);
+    QVERIFY(folders->flags() & Qt::ItemIsEnabled);
+    QVERIFY(folders->flags() & Qt::ItemIsSelectable);
+    QVERIFY(folders->isExpanded());
+
+    // An empty section offers its action; clicking it runs it. (Without the
+    // controller, which would open its modal file dialogs.)
+    disconnect(m_panel, &LibraryPanel::addFolderRequested, nullptr, nullptr);
+    disconnect(m_panel, &LibraryPanel::saveQueueRequested, nullptr, nullptr);
+    QSignalSpy addFolder(m_panel, &LibraryPanel::addFolderRequested);
+    QSignalSpy saveQueue(m_panel, &LibraryPanel::saveQueueRequested);
+    QCOMPARE(folders->childCount(), 1);
+    const auto clickItem = [view](QTreeWidgetItem *item) {
+        view->scrollToItem(item);
+        QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, view->visualItemRect(item).center());
+    };
+    clickItem(folders->child(0));
+    QCOMPARE(addFolder.count(), 1);
+    clickItem(playlists->child(0));
+    QCOMPARE(saveQueue.count(), 1);
+
+    // Clicking a section header folds and unfolds it, and that survives a rebuild.
+    clickItem(folders);
+    QVERIFY(!folders->isExpanded());
+    QVERIFY(m_library->add(MediaLibrary::Kind::Folder, m_show));
+    folders = view->topLevelItem(0);
+    QVERIFY(!folders->isExpanded());
+    QCOMPARE(folders->text(0), QStringLiteral("Folders (1)"));
+    clickItem(folders);
+    QVERIFY(folders->isExpanded());
+
+    // A stored folder opens with a click and plays with a double click.
+    QTreeWidgetItem *folder = m_panel->findItem(LibraryPanel::EntryType::Folder, m_show);
+    QVERIFY(folder && !folder->isExpanded());
+    clickItem(folder);
+    QVERIFY(folder->isExpanded());
+    QCOMPARE(folder->child(0)->text(0), QStringLiteral("Extras"));
 }
 
 void LibraryTest::expandButton()

@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QFutureWatcher>
 #include <QInputDialog>
+#include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
@@ -48,6 +49,8 @@ PlaylistController::PlaylistController(MpvWidget *mpv, PlaylistDrawer *drawer, Q
     connect(m_drawer, &PlaylistDrawer::filesDropped, this, &PlaylistController::addEntries);
     connect(m_drawer, &PlaylistDrawer::addRequested, this, &PlaylistController::addFilesDialog);
     connect(m_drawer, &PlaylistDrawer::addFolderRequested, this, &PlaylistController::addFolderDialog);
+    connect(m_drawer, &PlaylistDrawer::addUrlRequested, this, &PlaylistController::addUrlDialog);
+    connect(m_drawer, &PlaylistDrawer::shiftRequested, this, &PlaylistController::shiftRows);
     connect(m_drawer, &PlaylistDrawer::clearRequested, this, &PlaylistController::clear);
     connect(m_drawer, &PlaylistDrawer::sortRequested, this, &PlaylistController::sort);
     connect(m_drawer, &PlaylistDrawer::reverseRequested, this, &PlaylistController::reverse);
@@ -118,7 +121,11 @@ void PlaylistController::updateDrawer()
     files.reserve(m_entries.size());
     for (const PlaylistOps::Entry &entry : std::as_const(m_entries))
         files.append(entry.filename);
-    m_prober->probe(files);
+    // Most reports only move the playing entry; the files are probed already.
+    if (files != m_probedFiles) {
+        m_prober->probe(files);
+        m_probedFiles = files;
+    }
     scheduleSave();
 }
 
@@ -198,7 +205,11 @@ void PlaylistController::addFolder(const QString &folder)
         return;
     }
     Q_EMIT message(tr("Scanning Folder"), name);
-    MediaFiles::expandFoldersAsync({folder}, this, [this, name](const QStringList &files) {
+    // Opening something else meanwhile replaces the playlist this was meant for.
+    const quint64 ticket = m_mpv->replaceTicket();
+    MediaFiles::expandFoldersAsync({folder}, this, [this, name, ticket](const QStringList &files) {
+        if (ticket != m_mpv->replaceTicket())
+            return;
         if (files.isEmpty()) {
             Q_EMIT message(tr("No media files in"), name);
             return;
@@ -218,11 +229,17 @@ void PlaylistController::openFolder(const QString &folder)
         return;
     }
     Q_EMIT message(tr("Scanning Folder"), name);
-    MediaFiles::expandFoldersAsync({folder}, this, [this, name](const QStringList &files) {
+    // A later open, or a slower scan finishing after a faster one, must not
+    // put this folder back: only the newest request is played.
+    const quint64 ticket = m_mpv->reserveReplace();
+    MediaFiles::expandFoldersAsync({folder}, this, [this, name, ticket](const QStringList &files) {
+        if (ticket != m_mpv->replaceTicket())
+            return;
         if (files.isEmpty()) {
             Q_EMIT message(tr("No media files in"), name);
             return;
         }
+        m_mpv->continueReplace();
         m_mpv->loadFiles(files);
         Q_EMIT message(tr("Opened Folder"), itemsFrom(files.size(), name));
     });
@@ -238,9 +255,12 @@ void PlaylistController::openPlaylistDialog()
 void PlaylistController::openPlaylist(const QString &path)
 {
     const QString name = QFileInfo(path).fileName();
+    const quint64 ticket = m_mpv->reserveReplace();
     auto *watcher = new QFutureWatcher<PlaylistOps::PlaylistContents>(this);
-    connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, name] {
+    connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, name, ticket] {
         watcher->deleteLater();
+        if (ticket != m_mpv->replaceTicket())
+            return;
         const PlaylistOps::PlaylistContents contents = watcher->result();
         if (!contents.readable) {
             Q_EMIT message(tr("Could not open playlist"), name);
@@ -256,6 +276,7 @@ void PlaylistController::openPlaylist(const QString &path)
             files.append(entry.filename);
             titles.append(entry.title);
         }
+        m_mpv->continueReplace();
         m_mpv->loadTitledFiles(files, titles);
         QString summary = itemsFrom(files.size(), name);
         if (contents.missing > 0)
@@ -267,10 +288,42 @@ void PlaylistController::openPlaylist(const QString &path)
 
 void PlaylistController::addEntries(const QStringList &entries, int row)
 {
-    MediaFiles::expandFoldersAsync(entries, this, [this, row](const QStringList &files) {
-        if (!files.isEmpty())
+    const quint64 ticket = m_mpv->replaceTicket();
+    MediaFiles::expandFoldersAsync(entries, this, [this, row, ticket](const QStringList &files) {
+        if (!files.isEmpty() && ticket == m_mpv->replaceTicket())
             m_mpv->insertFiles(files, row);
     });
+}
+
+void PlaylistController::openEntries(const QStringList &entries, const QStringList &subtitles)
+{
+    const quint64 ticket = m_mpv->reserveReplace();
+    MediaFiles::expandFoldersAsync(entries, this, [this, subtitles, ticket](const QStringList &files) {
+        if (ticket != m_mpv->replaceTicket())
+            return;
+        if (files.isEmpty()) {
+            Q_EMIT message(tr("No media files found"));
+            return;
+        }
+        m_mpv->continueReplace();
+        m_mpv->loadFiles(files, subtitles);
+    });
+}
+
+void PlaylistController::addUrlDialog()
+{
+    bool ok = false;
+    const QString text = QInputDialog::getText(m_dialogParent, tr("Add URL"), tr("Video or audio URL:"),
+                                               QLineEdit::Normal, {}, &ok).trimmed();
+    if (!ok || text.isEmpty())
+        return;
+    const QUrl url = text.contains(QLatin1String("://")) ? QUrl(text) : QUrl::fromUserInput(text);
+    if (!url.isValid() || url.scheme().isEmpty()) {
+        Q_EMIT message(tr("Invalid URL"), text);
+        return;
+    }
+    m_mpv->insertFiles({url.isLocalFile() ? url.toLocalFile() : (text.contains(QLatin1String("://")) ? text : url.toString())});
+    Q_EMIT message(tr("Added to Playlist"), text);
 }
 
 void PlaylistController::savePlaylistDialog()
@@ -326,6 +379,13 @@ void PlaylistController::reverse()
     QList<int> order(m_entries.size());
     std::iota(order.rbegin(), order.rend(), 0);
     applyOrder(order);
+}
+
+void PlaylistController::shiftRows(const QList<int> &rows, PlaylistOps::Shift shift)
+{
+    refresh();
+    // The drawer keeps the moved entries selected (it follows mpv's entry ids).
+    applyOrder(PlaylistOps::shiftOrder(static_cast<int>(m_entries.size()), rows, shift));
 }
 
 void PlaylistController::shuffle()
@@ -493,14 +553,20 @@ void PlaylistController::playFromLibrary(LibraryPanel::EntryType type, const QSt
 {
     using EntryType = LibraryPanel::EntryType;
     switch (type) {
-    case EntryType::Folder:
-        MediaFiles::expandFoldersAsync({path}, this, [this, path](const QStringList &files) {
-            if (files.isEmpty())
+    case EntryType::Folder: {
+        const quint64 ticket = m_mpv->reserveReplace();
+        MediaFiles::expandFoldersAsync({path}, this, [this, path, ticket](const QStringList &files) {
+            if (ticket != m_mpv->replaceTicket())
+                return;
+            if (files.isEmpty()) {
                 Q_EMIT message(tr("No media files in"), QFileInfo(path).fileName());
-            else
-                m_mpv->loadFiles(files);
+                return;
+            }
+            m_mpv->continueReplace();
+            m_mpv->loadFiles(files);
         });
         break;
+    }
     case EntryType::Playlist:
         if (start < 0) {
             openPlaylist(path);
@@ -518,8 +584,12 @@ void PlaylistController::playFromLibrary(LibraryPanel::EntryType type, const QSt
             break;
         }
         const QFileInfo info(local);
-        MediaFiles::expandFoldersAsync({info.absolutePath()}, this, [this, path, info](const QStringList &files) {
+        const quint64 ticket = m_mpv->reserveReplace();
+        MediaFiles::expandFoldersAsync({info.absolutePath()}, this, [this, path, info, ticket](const QStringList &files) {
+            if (ticket != m_mpv->replaceTicket())
+                return;
             const qsizetype index = files.indexOf(info.absoluteFilePath());
+            m_mpv->continueReplace();
             if (index < 0)
                 m_mpv->loadFiles({path});
             else

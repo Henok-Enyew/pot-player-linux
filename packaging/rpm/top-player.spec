@@ -1,10 +1,10 @@
 # Built in CI by .github/workflows/release.yml, which replaces Version with
 # the release tag. Local build from a checkout:
 #
-#   git archive --prefix=top-player-1.0.1/ -o ~/rpmbuild/SOURCES/top-player-1.0.1.tar.gz HEAD
+#   git archive --prefix=top-player-1.0.2/ -o ~/rpmbuild/SOURCES/top-player-1.0.2.tar.gz HEAD
 #   rpmbuild -ba packaging/rpm/top-player.spec
 Name:           top-player
-Version:        1.0.1
+Version:        1.0.2
 Release:        1%{?dist}
 Summary:        High-performance, lightweight native media player
 
@@ -17,6 +17,8 @@ BuildRequires:  gcc-c++
 BuildRequires:  ninja-build
 BuildRequires:  pkgconfig(mpv)
 BuildRequires:  cmake(Qt6Core)
+# MPRIS: the media keys and the desktop's media controls.
+BuildRequires:  cmake(Qt6DBus)
 BuildRequires:  cmake(Qt6Concurrent)
 BuildRequires:  cmake(Qt6Gui)
 BuildRequires:  cmake(Qt6Widgets)
@@ -61,6 +63,14 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/org.github.topplayer.
 %{_datadir}/icons/hicolor/scalable/apps/org.github.topplayer.svg
 
 %changelog
+* Sat Oct 03 2026 Henok Enyew Andargie - 1.0.2-1
+- Media keys and desktop media controls through MPRIS
+- Drag or scroll sideways over the video to seek
+- Opened media plays right away; opening a folder replaces the playlist
+- Library folders and playlists open with a click
+- New window buttons and a PotPlayer-style playlist bar
+- Fewer position updates and repaints during playback
+
 * Sat Oct 03 2026 Henok Enyew Andargie - 1.0.1-1
 - Live TV plays channels that need a referrer or user agent, and tries a
   channel's other streams when one fails

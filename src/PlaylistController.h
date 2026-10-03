@@ -48,10 +48,17 @@ public:
     void openPlaylist(const QString &path);
     // Replaces the playlist with the media files in `folder` and its subfolders.
     void openFolder(const QString &folder);
+    // Replaces the playlist with `entries`, expanding folders in a worker
+    // thread first; `subtitles` are added to the first file.
+    void openEntries(const QStringList &entries, const QStringList &subtitles = {});
+    // Asks for a URL and queues it.
+    void addUrlDialog();
 
     void sort(PlaylistOps::SortKey key, bool ascending);
     void reverse();
     void shuffle();
+    // The move buttons: shifts the entries at `rows`.
+    void shiftRows(const QList<int> &rows, PlaylistOps::Shift shift);
     void removeRows(QList<int> rows);
     void clear();
     void removeMissing();
@@ -97,6 +104,8 @@ private:
     QList<PlaylistOps::Entry> m_entries;
     // A duration sort waiting for the prober to finish.
     std::optional<std::pair<PlaylistOps::SortKey, bool>> m_pendingSort;
+    // The files last handed to the prober.
+    QStringList m_probedFiles;
     QTimer m_durationTimer;
     // Coalesces playlist reports, so a burst of changes rebuilds the drawer once.
     QTimer m_playlistTimer;

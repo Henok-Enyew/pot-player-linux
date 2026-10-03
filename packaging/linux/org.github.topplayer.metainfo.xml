@@ -33,6 +33,19 @@
   </developer>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.2" date="2026-10-03">
+      <description>
+        <ul>
+          <li>The keyboard's media keys (play/pause, next, previous, stop) work through MPRIS, also from the desktop's media controls</li>
+          <li>Drag sideways over the video, or scroll sideways, to seek</li>
+          <li>Opened media starts playing right away</li>
+          <li>Opening a folder while a playlist plays replaces it instead of adding to it</li>
+          <li>Library folders and playlists can be clicked open and folded</li>
+          <li>New window buttons (always on top, minimize, maximize, fullscreen, close) and a PotPlayer-style playlist bar with move, ADD, DEL and SORT</li>
+          <li>Lighter playback: fewer position updates and repaints, no playlist rebuild when the next entry starts</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.1" date="2026-10-03">
       <description>
         <ul>

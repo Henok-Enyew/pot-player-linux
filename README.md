@@ -105,7 +105,17 @@ a 10-band equalizer, a playlist manager and a media library.
 - **Audio**: track selection, mute, volume up to mpv's maximum, and **audio
   delay** in 0.1 s steps.
 - **Stop keeps the playlist**: Play, Previous and Next continue from the entry
-  that was playing. Media keys (play, pause, stop, previous, next) work too.
+  that was playing.
+- **Media keys** (play/pause, stop, previous, next) work wherever the focus
+  is: the player speaks **MPRIS**, so the desktop hands it the keyboard's
+  media keys and its sound applet, lock screen and `playerctl` control it too.
+- **Swipe to seek**, as in VLC: hold the video and drag sideways (the full
+  width spans 3 minutes, or the whole file if shorter); the OSD shows the jump
+  and the target time, `Esc` cancels. Sideways touchpad or tilt-wheel
+  scrolling seeks 5 s per step.
+- **Opened media plays right away**, even if the last file was paused or
+  ran to its end. Opening a folder or playlist **replaces** the playlist;
+  a slower scan that finishes after a newer open is dropped.
 
 ### Interface
 
@@ -117,8 +127,10 @@ on top of Qt's Fusion style; self-painted widgets share the palette in
 - **Start screen** while nothing is loaded, with **Open File**, **Open
   Folder**, **Open URL / Stream**, **Open Playlist** and a drop zone. It fades
   out as playback starts and adapts to small windows, down to icon-only buttons.
-- **Title bar** with the media title and minimize / maximize / close. Drag it
-  to move the window, double-click to maximize.
+- **Title bar** with the logo, the media title and PotPlayer's corner
+  buttons: **always on top** (pin), minimize, maximize, **fullscreen** and
+  close, with soft animated highlights (red for close). Drag it to move the
+  window, double-click to maximize.
 - **Control bar** with open, previous, play/pause, stop and next; **shuffle**
   (lit cyan while on) and **repeat** (the icon shows a "1" in Repeat One); the
   time; volume; an **aspect** button (Fit to Window → 16:9 → 100%); and
@@ -172,9 +184,14 @@ alike, and they are restored on the next start.
 The drawer (`F6` or the playlist button) slides in from the right and mirrors
 mpv's playlist. Each entry shows its duration, read in the background.
 
+- A PotPlayer-style **bar along the bottom**: move the selected entries to
+  the top, up, down or to the bottom, and **ADD** (files, folder, URL, or
+  Open Folder to replace the playlist), **DEL** (selected, missing,
+  duplicates, clear) and **SORT** menus.
 - **Reorder** by dragging, **drop** files from a file manager at any position,
   **double-click** to play, `Del` to remove.
-- **Add Files...** and **Add Folder...** ("Added 24 items from Season 1").
+- **Add Files...**, **Add Folder...** ("Added 24 items from Season 1") and
+  **Add URL...**.
 - **Sort** by name, duration, file path or file size, **Reverse Order**, and
   **Shuffle**; the playing file keeps playing.
 - **Remove Missing/Inaccessible Files**, **Remove Duplicates** (keeps the
@@ -197,7 +214,9 @@ mpv's playlist. Each entry shows its duration, read in the background.
 
 ### Library
 
-The drawer's second tab keeps folders and playlists inside the player.
+The drawer's second tab keeps folders and playlists inside the player. The
+**Folders** and **Playlists** sections fold and unfold with a click, and so
+do the folders and playlists in them; an empty section offers to add one.
 
 - **Add Folder to Library...**: browse its subfolders and media files.
   Double-click a folder to play all of it, or a file to play its folder from
@@ -342,11 +361,13 @@ mpv property or command, and check marks reflect mpv's live state.
 | `PgUp` / `PgDn` | Previous / next file |
 | `Up` / `Down` | Volume ±2 |
 | Mouse wheel | Volume ±5 |
+| Drag the video sideways | Seek (swipe), `Esc` cancels |
+| Scroll sideways (touchpad, tilt wheel) | Seek ±5 s |
 | `M` | Mute |
 | `C` / `X` / `Z` | Speed +0.1 / −0.1 / reset |
 | `Ctrl+Shift+L` | Loop file |
 | `Ctrl+.` / `Ctrl+,` | Audio delay ±0.1 s |
-| Media keys | Play, pause, stop, previous, next |
+| Media keys | Play, pause, stop, previous, next (also through MPRIS, from the desktop) |
 
 **Window**
 
@@ -436,7 +457,7 @@ xvfb-run -a ctest --test-dir build --output-on-failure
 
 | Format | Recipe | Build locally |
 | --- | --- | --- |
-| AppImage | [`packaging/appimage/build-appimage.sh`](packaging/appimage/build-appimage.sh) | `VERSION=1.0.1 packaging/appimage/build-appimage.sh` (also needs `qmake6`, optionally `qt6-wayland`) |
+| AppImage | [`packaging/appimage/build-appimage.sh`](packaging/appimage/build-appimage.sh) | `VERSION=1.0.2 packaging/appimage/build-appimage.sh` (also needs `qmake6`, optionally `qt6-wayland`) |
 | Flatpak | [`org.github.topplayer.yaml`](org.github.topplayer.yaml) (KDE 6.11 runtime, builds libmpv) | `flatpak-builder --user --install --force-clean build-flatpak org.github.topplayer.yaml` |
 | RPM | [`packaging/rpm/top-player.spec`](packaging/rpm/top-player.spec) | see the comment at the top of the spec |
 
@@ -465,7 +486,8 @@ of their own.
 
 | Version | Date | Highlights |
 | --- | --- | --- |
-| [**1.0.1**](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v1.0.1) | 2026-10-03 | Live TV fix (referrer / user agent, fallback streams), every country with categories and Hide geo-blocked, playlist in fullscreen, shuffle / repeat / aspect buttons, better Open Playlist |
+| [**1.0.2**](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v1.0.2) | 2026-10-03 | Media keys over MPRIS, swipe / sideways-scroll seeking, autoplay on open, opening a folder replaces the playlist, clickable library sections, new window buttons and a PotPlayer-style playlist bar, lighter playback |
+| [1.0.1](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v1.0.1) | 2026-10-03 | Live TV fix (referrer / user agent, fallback streams), every country with categories and Hide geo-blocked, playlist in fullscreen, shuffle / repeat / aspect buttons, better Open Playlist |
 | [**1.0.0**](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v1.0.0) | 2026-10-03 | Renamed to Top Player with a new icon and cyan skin, About dialog, click to pause, double-click for fullscreen, fast folder loading, 10-band equalizer |
 | [0.2.0](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v0.2.0) | 2026-10-03 | Subtitle download, audio view with cover art and visualizations, playlist manager with sorting, M3U and session restore |
 | [0.1.0](https://github.com/Henok-Enyew/top-player-linux/releases/tag/v0.1.0) | 2026-10-02 | First release |
@@ -482,9 +504,9 @@ publishes a GitHub Release with the packages and `SHA256SUMS`:
    add a `<release>` entry to
    [`packaging/linux/org.github.topplayer.metainfo.xml`](packaging/linux/org.github.topplayer.metainfo.xml),
    and commit.
-2. `git tag v1.0.1 && git push origin v1.0.1`
+2. `git tag v1.0.2 && git push origin v1.0.2`
 
-A tag with a suffix such as `v1.0.1-rc1` is published as a pre-release.
+A tag with a suffix such as `v1.0.2-rc1` is published as a pre-release.
 
 </details>
 

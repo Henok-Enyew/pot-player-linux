@@ -115,6 +115,53 @@ QList<std::pair<int, int>> movesForOrder(const QList<int> &order)
     return moves;
 }
 
+QList<int> shiftOrder(int count, const QList<int> &rows, Shift shift, QList<int> *newRows)
+{
+    QList<bool> selected(count, false);
+    for (int row : rows) {
+        if (row >= 0 && row < count)
+            selected[row] = true;
+    }
+    QList<int> order;
+    order.reserve(count);
+    switch (shift) {
+    case Shift::Top:
+    case Shift::Bottom: {
+        QList<int> picked;
+        QList<int> others;
+        for (int row = 0; row < count; ++row)
+            (selected[row] ? picked : others).append(row);
+        order = shift == Shift::Top ? picked + others : others + picked;
+        break;
+    }
+    case Shift::Up:
+        order.resize(count);
+        std::iota(order.begin(), order.end(), 0);
+        // A selected entry swaps with an unselected one above it; a run at the top stays.
+        for (int pos = 1; pos < count; ++pos) {
+            if (selected[order[pos]] && !selected[order[pos - 1]])
+                std::swap(order[pos], order[pos - 1]);
+        }
+        break;
+    case Shift::Down:
+        order.resize(count);
+        std::iota(order.begin(), order.end(), 0);
+        for (int pos = count - 2; pos >= 0; --pos) {
+            if (selected[order[pos]] && !selected[order[pos + 1]])
+                std::swap(order[pos], order[pos + 1]);
+        }
+        break;
+    }
+    if (newRows) {
+        newRows->clear();
+        for (int pos = 0; pos < count; ++pos) {
+            if (selected[order[pos]])
+                newRows->append(pos);
+        }
+    }
+    return order;
+}
+
 QList<int> duplicateRows(const QList<Entry> &entries, int keepRow)
 {
     QStringList keys;

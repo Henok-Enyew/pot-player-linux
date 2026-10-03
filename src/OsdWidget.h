@@ -20,6 +20,8 @@ public:
     void showValue(const QString &label, const QString &value = {}, qreal progress = -1);
     // Shows "<position> / <duration>" with a seek bar.
     void showTime(double position, double duration);
+    // A seek in progress: the jump (e.g. "+00:00:15"), then the target time.
+    void showSeek(double offset, double target, double duration);
 
     // The text shown last, e.g. "Volume 65%".
     QString text() const;

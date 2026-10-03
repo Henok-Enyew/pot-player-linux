@@ -70,6 +70,18 @@ void OsdWidget::showTime(double position, double duration)
     showSegments(segments, progress);
 }
 
+void OsdWidget::showSeek(double offset, double target, double duration)
+{
+    const QString jump = (offset < 0 ? QStringLiteral("-") : QStringLiteral("+")) + formatTime(std::abs(offset));
+    QList<Segment> segments{{QStringLiteral("[%1]  ").arg(jump), false}, {formatTime(target), true}};
+    qreal progress = -1;
+    if (duration > 0) {
+        segments.append({QStringLiteral(" / ") + formatTime(duration), false});
+        progress = std::clamp(target / duration, 0.0, 1.0);
+    }
+    showSegments(segments, progress);
+}
+
 void OsdWidget::setOpacity(qreal opacity)
 {
     m_opacity = opacity;

@@ -7,6 +7,11 @@
 #include "MainWindow.h"
 #include "PlaylistDrawer.h"
 #include "MpvWidget.h"
+#ifdef TOPPLAYER_HAVE_DBUS
+#include "MprisService.h"
+#include <QDBusAbstractAdaptor>
+#include <QDBusObjectPath>
+#endif
 #include "SeekBar.h"
 #include "ThumbnailGenerator.h"
 #include "TestClip.h"
@@ -21,6 +26,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
+#include <QWheelEvent>
+#include <QMouseEvent>
 
 #include <clocale>
 #include <cmath>
@@ -50,12 +57,16 @@ private Q_SLOTS:
     void previousNextButtons();
     void muteButton();
     void mediaKeys();
+    void mediaKeysWithListFocus();
+    void mpris();
     void seekHotkeys_data();
     void seekHotkeys();
     void volumeHotkeys();
     void pageUpPageDown();
     void playlistKeepsArrowKeys();
     void clickTogglesPause();
+    void swipeSeeks();
+    void horizontalWheelSeeks();
     void doubleClickTogglesFullScreen();
     void playlistInFullScreen();
     void shuffleButton();
@@ -225,6 +236,73 @@ void TransportTest::muteButton()
     QTRY_COMPARE(iconImage(button->icon()), iconImage(skinIcon(IconType::Volume)));
 }
 
+// Like a real key press: tried as a shortcut first. (QTest::keyClick can't
+// type keys without text, such as the media keys.)
+static void mediaKeyClick(QWidget *widget, Qt::Key key)
+{
+    QTest::sendKeyEvent(QTest::Press, widget, key, QString(), Qt::NoModifier);
+    QTest::sendKeyEvent(QTest::Release, widget, key, QString(), Qt::NoModifier);
+}
+
+void TransportTest::mediaKeysWithListFocus()
+{
+    // The media keys must work while a list (the playlist) has the keyboard.
+    m_window->setPlaylistVisible(true);
+    auto *list = m_window->findChild<QListWidget *>(QStringLiteral("PlaylistView"));
+    QVERIFY(list);
+    QTRY_VERIFY(list->isVisible());
+    list->setFocus();
+    QTRY_COMPARE(QApplication::focusWidget(), list);
+    mediaKeyClick(list, Qt::Key_MediaNext);
+    QTRY_COMPARE(prop("playlist-pos").toInt(), 1);
+    mediaKeyClick(list, Qt::Key_MediaPrevious);
+    QTRY_COMPARE(prop("playlist-pos").toInt(), 0);
+    mediaKeyClick(list, Qt::Key_MediaTogglePlayPause);
+    QTRY_VERIFY(prop("pause").toBool());
+    mediaKeyClick(list, Qt::Key_MediaPlay);
+    QTRY_VERIFY(!prop("pause").toBool());
+    mediaKeyClick(list, Qt::Key_MediaStop);
+    QTRY_VERIFY(m_mpv->isIdle());
+}
+
+void TransportTest::mpris()
+{
+#ifndef TOPPLAYER_HAVE_DBUS
+    QSKIP("built without D-Bus");
+#else
+    auto *service = m_window->findChild<MprisService *>();
+    QVERIFY(service);
+    QDBusAbstractAdaptor *player = nullptr;
+    for (auto *adaptor : service->findChildren<QDBusAbstractAdaptor *>()) {
+        if (QString::fromLatin1(adaptor->metaObject()->className()) == QLatin1String("MprisPlayerAdaptor"))
+            player = adaptor;
+    }
+    QVERIFY(player);
+    const auto call = [player](const char *method) { QVERIFY(QMetaObject::invokeMethod(player, method)); };
+    QTRY_COMPARE(player->property("PlaybackStatus").toString(), QStringLiteral("Playing"));
+    QVERIFY(player->property("CanGoNext").toBool());
+    QVERIFY(player->property("Metadata").toMap().contains(QStringLiteral("mpris:trackid")));
+
+    call("PlayPause");
+    QTRY_VERIFY(prop("pause").toBool());
+    QTRY_COMPARE(player->property("PlaybackStatus").toString(), QStringLiteral("Paused"));
+    call("Play");
+    QTRY_VERIFY(!prop("pause").toBool());
+    call("Next");
+    QTRY_COMPARE(prop("playlist-pos").toInt(), 1);
+    call("Previous");
+    QTRY_COMPARE(prop("playlist-pos").toInt(), 0);
+    QTRY_VERIFY(prop("seekable").toBool());
+    QVERIFY(QMetaObject::invokeMethod(player, "Seek", Q_ARG(qlonglong, 30 * 1000000LL)));
+    QTRY_VERIFY(prop("time-pos").toDouble() >= 29);
+    call("Pause");
+    QTRY_VERIFY(prop("pause").toBool());
+    call("Stop");
+    QTRY_VERIFY(m_mpv->isIdle());
+    QTRY_COMPARE(player->property("PlaybackStatus").toString(), QStringLiteral("Stopped"));
+#endif
+}
+
 void TransportTest::mediaKeys()
 {
     pressMediaKey(Qt::Key_MediaTogglePlayPause);
@@ -370,6 +448,64 @@ void TransportTest::clickTogglesPause()
     QTest::mouseClick(m_mpv, Qt::LeftButton, Qt::NoModifier, m_mpv->rect().center(),
                       QApplication::doubleClickInterval() + 100);
     QTRY_VERIFY(!prop("pause").toBool());
+}
+
+void TransportTest::swipeSeeks()
+{
+    // Hold and drag sideways over the video: scrubs through the file.
+    m_mpv->command({QStringLiteral("seek"), QStringLiteral("100"), QStringLiteral("absolute+exact")});
+    QTRY_VERIFY(std::abs(prop("time-pos").toDouble() - 100) < 1);
+    const QRect geometry = m_window->geometry();
+    const QPoint start = m_mpv->rect().center();
+    const int quarter = m_mpv->width() / 4; // a quarter of the 180 s span: 45 s
+    QTest::mousePress(m_mpv, Qt::LeftButton, Qt::NoModifier, start);
+    for (int step = 1; step <= 10; ++step) {
+        QMouseEvent move(QEvent::MouseMove, QPointF(start + QPoint(quarter * step / 10, 2)),
+                         m_mpv->mapToGlobal(QPointF(start + QPoint(quarter * step / 10, 2))),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(m_mpv, &move);
+        QTest::qWait(20);
+    }
+    QTest::mouseRelease(m_mpv, Qt::LeftButton, Qt::NoModifier, start + QPoint(quarter, 2));
+    QTRY_VERIFY(std::abs(prop("time-pos").toDouble() - 145) < 2);
+    // A seek, not a click: no pause, and the window did not move.
+    QTest::qWait(QApplication::doubleClickInterval() + 100);
+    QVERIFY(!prop("pause").toBool());
+    QCOMPARE(m_window->geometry(), geometry);
+
+    // Backwards, then cancelled with Esc: back where it started.
+    QTest::mousePress(m_mpv, Qt::LeftButton, Qt::NoModifier, start);
+    QMouseEvent back(QEvent::MouseMove, QPointF(start - QPoint(quarter, 0)), m_mpv->mapToGlobal(QPointF(start - QPoint(quarter, 0))),
+                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(m_mpv, &back);
+    QTest::keyClick(m_window, Qt::Key_Escape);
+    QTest::mouseRelease(m_mpv, Qt::LeftButton, Qt::NoModifier, start - QPoint(quarter, 0));
+    QTest::qWait(300);
+    QTRY_VERIFY(prop("time-pos").toDouble() > 140);
+}
+
+void TransportTest::horizontalWheelSeeks()
+{
+    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
+    m_mpv->command({QStringLiteral("seek"), QStringLiteral("100"), QStringLiteral("absolute+exact")});
+    QTRY_VERIFY(std::abs(prop("time-pos").toDouble() - 100) < 1);
+    const double volume = prop("volume").toDouble();
+    // Synthesized wheel events don't propagate from the video to the window
+    // like real ones, so go to the window directly.
+    const QPointF pos = m_mpv->mapTo(m_window, QPointF(m_mpv->rect().center()));
+    const auto wheel = [&](QPoint angle) {
+        QWheelEvent event(pos, m_window->mapToGlobal(pos), QPoint(), angle, Qt::NoButton, Qt::NoModifier,
+                          Qt::NoScrollPhase, false);
+        QApplication::sendEvent(m_window, &event);
+    };
+    // Scrolling right: 5 s forward per notch.
+    wheel(QPoint(-240, 0));
+    QTRY_VERIFY(std::abs(prop("time-pos").toDouble() - 110) < 1.5);
+    // Small touchpad steps add up.
+    for (int i = 0; i < 6; ++i)
+        wheel(QPoint(20, 0));
+    QTRY_VERIFY(std::abs(prop("time-pos").toDouble() - 105) < 1.5);
+    QCOMPARE(prop("volume").toDouble(), volume);
 }
 
 void TransportTest::doubleClickTogglesFullScreen()
@@ -566,8 +702,8 @@ void TransportTest::aboutDialog()
     auto *title = about->findChild<QLabel *>(QStringLiteral("AboutTitle"));
     QVERIFY(title);
     QCOMPARE(title->accessibleName(), QStringLiteral("Top Player — Version " APP_VERSION));
-    QCOMPARE(QStringLiteral(APP_VERSION), QStringLiteral("1.0.1"));
-    QVERIFY(title->text().contains(QLatin1String("Version 1.0.1")));
+    QCOMPARE(QStringLiteral(APP_VERSION), QStringLiteral("1.0.2"));
+    QVERIFY(title->text().contains(QLatin1String("Version 1.0.2")));
     auto *links = about->findChild<QLabel *>(QStringLiteral("AboutLinks"));
     QVERIFY(links);
     QVERIFY(links->openExternalLinks());

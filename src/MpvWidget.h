@@ -5,6 +5,7 @@
 #include <QSet>
 #include <QSize>
 #include <QStringList>
+#include <QTimer>
 #include <QVariant>
 
 #include <memory>
@@ -64,6 +65,19 @@ public:
     // The entry that is playing, or played last before a stop; -1 if none.
     int lastPlaylistPos() const { return m_lastPlaylistPos; }
 
+    // Changes whenever the playlist is replaced (loadFiles(), loadStream(), ...)
+    // or a replacement is reserved. Work that finishes later, such as a folder
+    // scan, compares it with the value it started with to tell whether the
+    // user has opened something else in the meantime.
+    quint64 replaceTicket() const { return m_replaceTicket; }
+    // Reserves a replacement that is still being prepared: earlier tickets
+    // become stale. Returns the new ticket.
+    quint64 reserveReplace() { return ++m_replaceTicket; }
+    // The next replacement carries out the reservation made with
+    // reserveReplace(), keeping its ticket, so that adds made since stay valid.
+    // Call right before the load.
+    void continueReplace() { m_continueReplace = true; }
+
     // Runs an mpv command asynchronously, e.g. {"seek", "5", "relative"}.
     // Commands run in order; none is dropped, however many are sent at once.
     void command(const QStringList &args);
@@ -121,6 +135,7 @@ protected:
 private Q_SLOTS:
     void processMpvEvents();
     void onRenderUpdate();
+    void onFrameSwapped();
 
 private:
     static void onMpvWakeup(void *ctx);
@@ -145,6 +160,12 @@ private:
     QString writeBatch(const QStringList &files, const QStringList &titles = {});
     // Sends queued commands while fewer than kMaxPendingReplies are unanswered.
     void sendQueuedCommands();
+    // Bookkeeping for a command sequence that replaces the playlist: the new
+    // ticket, and `commands` preceded by clearing the pause flag, so newly
+    // opened media plays even if the last file was paused or ran out.
+    QList<QStringList> replacing(QList<QStringList> commands);
+    // Emits the latest time-pos now, if one is waiting.
+    void flushTimePos();
 
     mpv_handle *m_mpv = nullptr;
     mpv_render_context *m_renderCtx = nullptr;
@@ -178,4 +199,11 @@ private:
     int m_pendingReplies = 0;
     // Reply id of the loadlist the queue waits for, or 0.
     quint64 m_awaitedBatch = 0;
+    quint64 m_replaceTicket = 0;
+    bool m_continueReplace = false;
+    // time-pos changes with every frame; widgets hear of it at most every
+    // kTimePosIntervalMs (and at once after a seek or a new file).
+    QTimer *m_timePosTimer = nullptr;
+    QVariant m_timePos;
+    bool m_timePosPending = false;
 };

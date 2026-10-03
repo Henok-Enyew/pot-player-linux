@@ -18,12 +18,19 @@ class LibraryView : public QTreeWidget
 public:
     explicit LibraryView(QWidget *parent = nullptr);
 
+    // Whether the last press was on a row's arrow (which folds the row itself).
+    bool pressedOnBranch() const { return m_pressedOnBranch; }
+
 protected:
     QMimeData *mimeData(const QList<QTreeWidgetItem *> &items) const override;
     void keyPressEvent(QKeyEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
 
 Q_SIGNALS:
     void removeRequested(QTreeWidgetItem *item);
+
+private:
+    bool m_pressedOnBranch = false;
 };
 
 // The "Library" page of the playlist drawer: the stored folders and
@@ -69,6 +76,8 @@ private:
     void renameItem(QTreeWidgetItem *item);
     void removeItem(QTreeWidgetItem *item);
     void updateButtons();
+    void onItemClicked(QTreeWidgetItem *item);
+    void runRowAction(QTreeWidgetItem *item);
 
     MediaLibrary *m_library = nullptr;
     LibraryView *m_view;
@@ -77,4 +86,6 @@ private:
     QToolButton *m_removeButton = nullptr;
     // Items to expand again as the tree is rebuilt, as "type:path" keys.
     QSet<QString> m_expandedKeys;
+    // Sections the user folded, kept across rebuilds.
+    QSet<QString> m_collapsedSections;
 };

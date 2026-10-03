@@ -35,6 +35,13 @@ QList<int> sortOrder(const QList<Entry> &entries, SortKey key, bool ascending = 
 // `order`. Rows already in place are not moved.
 QList<std::pair<int, int>> movesForOrder(const QList<int> &order);
 
+// Moving the selected rows of a playlist of `count` entries, as PotPlayer's
+// move buttons do: to the top, one up, one down, or to the bottom. Returns
+// the new order (as sortOrder() does) and, in `newRows`, where the selected
+// rows end up. Rows already at the edge stay; the others keep their order.
+enum class Shift { Top, Up, Down, Bottom };
+QList<int> shiftOrder(int count, const QList<int> &rows, Shift shift, QList<int> *newRows = nullptr);
+
 // Rows that repeat an earlier entry (same file or URL), ascending. Of a set of
 // duplicates the `keepRow` entry (e.g. the one playing) is kept if it is one of them.
 QList<int> duplicateRows(const QList<Entry> &entries, int keepRow = -1);

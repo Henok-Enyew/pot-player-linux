@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(top-player
-    VERSION 1.0.1
+    VERSION 1.0.2
     DESCRIPTION "Top Player: a lightweight Qt6 + libmpv media player for Linux"
     LANGUAGES CXX)
 
@@ -18,6 +18,8 @@ endif()
 include(GNUInstallDirs)
 
 find_package(Qt6 6.2 REQUIRED COMPONENTS Core Concurrent Gui Widgets Network OpenGL OpenGLWidgets)
+# MPRIS (media keys, the desktop's media controls) needs D-Bus.
+find_package(Qt6 6.2 QUIET OPTIONAL_COMPONENTS DBus)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
 # Unpacks the ZIP archives subtitle sites hand out.
@@ -144,6 +146,14 @@ target_link_libraries(top-player-core PUBLIC
     PkgConfig::MPV
     ZLIB::ZLIB
 )
+
+if(TARGET Qt6::DBus)
+    target_sources(top-player-core PRIVATE src/MprisService.cpp src/MprisService.h)
+    target_compile_definitions(top-player-core PUBLIC TOPPLAYER_HAVE_DBUS)
+    target_link_libraries(top-player-core PUBLIC Qt6::DBus)
+else()
+    message(STATUS "Qt6 DBus not found: building without MPRIS (media keys)")
+endif()
 
 add_executable(top-player src/main.cpp)
 target_link_libraries(top-player PRIVATE top-player-core)

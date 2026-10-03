@@ -97,6 +97,10 @@ Q_SIGNALS:
     void removeRequested(const QList<int> &rows);
     void addRequested();
     void addFolderRequested();
+    void addUrlRequested();
+    void openFolderRequested();
+    // The move buttons: shift the selected `rows` (see PlaylistOps::shiftOrder).
+    void shiftRequested(const QList<int> &rows, PlaylistOps::Shift shift);
     void clearRequested();
     void sortRequested(PlaylistOps::SortKey key, bool ascending);
     void reverseRequested();
@@ -113,6 +117,10 @@ protected:
 
 private:
     void buildMenus();
+    // The bar along the bottom, as in PotPlayer: move buttons, ADD, DEL, SORT and more.
+    QWidget *buildActionBar();
+    // Updates the rows in place when only the playing entry or titles changed.
+    bool updateEntriesInPlace(const QVariantList &playlist);
     // Checks the session options to match the saved settings.
     void syncOptions();
     void showContextMenu(const QPoint &pos);
@@ -127,6 +135,8 @@ private:
     QLabel *m_countLabel;
     QMenu *m_sortMenu = nullptr;
     QMenu *m_moreMenu = nullptr;
+    QMenu *m_addMenu = nullptr;
+    QMenu *m_deleteMenu = nullptr;
     QAction *m_rememberAction = nullptr;
     QAction *m_resumeAction = nullptr;
     QTabBar *m_tabs;
