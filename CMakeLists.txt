@@ -20,6 +20,8 @@ include(GNUInstallDirs)
 find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Network OpenGL OpenGLWidgets)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
+# Unpacks the ZIP archives subtitle sites hand out.
+find_package(ZLIB REQUIRED)
 
 # OpenSubtitles.com needs an API key. One built in here is used unless the
 # user enters their own in the subtitle download settings. Release builds
@@ -83,6 +85,8 @@ add_library(pot-player-core OBJECT
     src/PlayerMenu.cpp
     src/PlayerMenu.h
     src/PlaylistController.cpp
+    src/PodnapisiClient.cpp
+    src/PodnapisiClient.h
     src/PlaylistController.h
     src/PlaylistDrawer.cpp
     src/PlaylistDrawer.h
@@ -96,6 +100,10 @@ add_library(pot-player-core OBJECT
     src/StreamCatalog.h
     src/SubtitleDownloadDialog.cpp
     src/SubtitleDownloadDialog.h
+    src/SubtitleFinder.cpp
+    src/SubtitleFinder.h
+    src/SubtitleHasher.cpp
+    src/SubtitleHasher.h
     src/SubtitleSearch.cpp
     src/SubtitleSearch.h
     src/Theme.cpp
@@ -107,6 +115,8 @@ add_library(pot-player-core OBJECT
     src/TimeFormat.h
     src/TitleBar.cpp
     src/TitleBar.h
+    src/ZipArchive.cpp
+    src/ZipArchive.h
 )
 
 target_include_directories(pot-player-core PUBLIC src)
@@ -129,6 +139,7 @@ target_link_libraries(pot-player-core PUBLIC
     Qt6::OpenGL
     Qt6::OpenGLWidgets
     PkgConfig::MPV
+    ZLIB::ZLIB
 )
 
 add_executable(pot-player src/main.cpp)

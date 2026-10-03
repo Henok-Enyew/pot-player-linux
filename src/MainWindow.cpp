@@ -424,14 +424,14 @@ void MainWindow::openSubtitleDownloadDialog()
     }
     auto *dialog = new SubtitleDownloadDialog(path, this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
-    connect(dialog, &SubtitleDownloadDialog::subtitleDownloaded, this, [this, path](const QString &file) {
+    connect(dialog, &SubtitleDownloadDialog::subtitleDownloaded, this, [this, path](const QString &file, const QString &label) {
         // The video may have changed while the dialog was open.
         if (m_mpv->mpvPropertyString(QStringLiteral("path")) != path)
             return;
         m_mpv->addSubtitle(file);
         // A subtitle the user just asked for should show even if subtitles were hidden.
         m_mpv->setMpvProperty(QStringLiteral("sub-visibility"), QStringLiteral("yes"));
-        m_osd->showValue(tr("Subtitle loaded:"), QFileInfo(file).fileName());
+        m_osd->showValue(tr("Subtitles loaded:"), label);
     });
     dialog->open();
 }

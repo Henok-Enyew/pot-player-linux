@@ -22,8 +22,8 @@ The AppImage is built on Ubuntu 24.04, so it needs glibc 2.39 or newer
 
 | Distro | Packages |
 | --- | --- |
-| Ubuntu / Debian | `build-essential cmake ninja-build pkg-config qt6-base-dev libgl-dev libmpv-dev` |
-| Fedora | `gcc-c++ cmake ninja-build pkgconf-pkg-config qt6-qtbase-devel mesa-libGL-devel mpv-devel` |
+| Ubuntu / Debian | `build-essential cmake ninja-build pkg-config qt6-base-dev libgl-dev libmpv-dev zlib1g-dev` |
+| Fedora | `gcc-c++ cmake ninja-build pkgconf-pkg-config qt6-qtbase-devel mesa-libGL-devel mpv-devel zlib-devel` |
 
 ### Compile
 
@@ -201,23 +201,23 @@ when the server can't be reached.
   `secondary-sid`) to show a second language at the top of the frame while
   the primary track stays at the bottom.
 - **Download subtitles** (`D`, or **Subtitles > Download Subtitles...**)
-  searches [OpenSubtitles.com](https://www.opensubtitles.com). The search is
-  filled in from the file name ("The.Matrix.1999.1080p.BluRay.mkv" becomes
-  *The Matrix*, 1999; "Show.S01E02" becomes season 1, episode 2), in your
-  system language, and with the file's
-  [movie hash](https://trac.opensubtitles.org/projects/opensubtitles/wiki/HashSourceCodes)
-  so subtitles made for this exact release are listed first as **Exact
-  match**. Type another title, pick another language, or click a column to
-  sort. **Download & Apply** (or double-click) saves the file next to the
-  video as `<video>.<language>.srt` (or in
-  `~/.cache/potplayer-linux/subtitles/` if that folder is read-only, or if
-  you choose so in the settings), loads it, selects it and shows it. `Esc`
-  stops a running search.
-- OpenSubtitles needs an API key: create a free one at
-  [opensubtitles.com/consumers](https://www.opensubtitles.com/consumers) and
-  enter it under **Subtitles > Subtitle Download Settings...** (also the
-  **Settings...** button in the dialog). Release builds may include a
-  default key; yours takes precedence.
+  needs no account or API key. The title is filled in from the file name
+  ("The.Matrix.1999.1080p.BluRay.mkv" becomes *The Matrix*, 1999;
+  "Show.S01E02" becomes season 1, episode 2), in your system language.
+  - **Search by Hash (Exact Match)** looks for subtitles made for this
+    exact file, by its OpenSubtitles
+    [movie hash](https://trac.opensubtitles.org/projects/opensubtitles/wiki/HashSourceCodes).
+    This uses OpenSubtitles, so it needs the build's built-in key or one of
+    your own (optional, under **Subtitles > Subtitle Download Settings...**);
+    otherwise, or for files under 128 KiB, it searches by name.
+  - **Search by Name** asks [podnapisi.net](https://www.podnapisi.net)
+    (no key needed), then OpenSubtitles if it is set up. Subtitles named
+    like your file are listed first as **Release match**.
+  - **Download & Play** (or double-click) saves the subtitle in
+    `~/.cache/potplayer-linux/subtitles/` (or next to the video, if you
+    choose so in the settings), selects it and shows it. `Esc` or
+    **Cancel** stops a running search. Being offline, a slow server or no
+    matches gives a message in the dialog, nothing more.
 
 ### Tools
 
@@ -310,11 +310,12 @@ publishes a GitHub Release with the packages and a `SHA256SUMS` file:
    and commit.
 2. `git tag v0.2.0 && git push origin v0.2.0`
 
-To build in a default OpenSubtitles API key, add it as the repository secret
+To build in a default OpenSubtitles API key (for exact subtitle matches), add it as the repository secret
 `OPENSUBTITLES_API_KEY`; the workflow passes it to all three builds (locally:
 set `$OPENSUBTITLES_API_KEY`, or put the key in an untracked
-`opensubtitles-api-key.txt`, before running CMake). Without one, users enter
-their own key.
+`opensubtitles-api-key.txt`, before running CMake). Without one, subtitle
+search still works through podnapisi.net, but exact (hash) matches need
+users to enter a key of their own.
 
 A tag with a suffix such as `v0.2.0-rc1` is published as a pre-release.
 

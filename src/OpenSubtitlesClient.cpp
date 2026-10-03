@@ -38,12 +38,6 @@ OpenSubtitlesClient::OpenSubtitlesClient(QObject *parent)
         m_baseUrl = QUrl(override);
 }
 
-QByteArray OpenSubtitlesClient::userAgent()
-{
-    // OpenSubtitles asks API consumers to name themselves.
-    return QByteArrayLiteral("PotPlayerLinux v" APP_VERSION);
-}
-
 QNetworkRequest OpenSubtitlesClient::apiRequest(const QString &endpoint, const QUrlQuery &query) const
 {
     QUrl url = m_baseUrl;
@@ -51,7 +45,7 @@ QNetworkRequest OpenSubtitlesClient::apiRequest(const QString &endpoint, const Q
     url.setQuery(query);
     QNetworkRequest request(url);
     request.setRawHeader("Api-Key", m_apiKey.toUtf8());
-    request.setRawHeader("User-Agent", userAgent());
+    request.setRawHeader("User-Agent", SubtitleSearch::userAgent());
     request.setRawHeader("Accept", "application/json");
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     request.setTransferTimeout(kTimeoutMs);
@@ -132,9 +126,11 @@ QList<OpenSubtitlesClient::Result> OpenSubtitlesClient::parseResults(const QByte
             continue;
         const QJsonObject file = files.first().toObject();
         Result result;
+        result.provider = QStringLiteral("OpenSubtitles");
         result.fileId = file.value(QStringLiteral("file_id")).toInt();
         if (result.fileId == 0)
             continue;
+        result.id = QString::number(result.fileId);
         result.fileName = file.value(QStringLiteral("file_name")).toString();
         result.release = attributes.value(QStringLiteral("release")).toString();
         if (result.fileName.isEmpty())
@@ -189,7 +185,7 @@ void OpenSubtitlesClient::fetchFile(const QUrl &link, const QString &path)
 {
     // The link points at a file server: no API key for it.
     QNetworkRequest request(link);
-    request.setRawHeader("User-Agent", userAgent());
+    request.setRawHeader("User-Agent", SubtitleSearch::userAgent());
     request.setTransferTimeout(kTimeoutMs);
     QNetworkReply *reply = m_network->get(request);
     track(reply);
@@ -233,7 +229,5 @@ QString OpenSubtitlesClient::errorMessage(QNetworkReply *reply, const QByteArray
         return message.isEmpty() ? tr("The OpenSubtitles download limit is reached; try again later.") : message;
     if (!message.isEmpty())
         return message;
-    if (reply->error() == QNetworkReply::OperationCanceledError)
-        return tr("The server took too long to answer.");
-    return reply->errorString();
+    return SubtitleSearch::networkErrorMessage(QStringLiteral("OpenSubtitles.com"), reply);
 }
