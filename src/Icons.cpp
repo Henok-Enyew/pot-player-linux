@@ -1,15 +1,17 @@
 #include "Icons.h"
+#include "Theme.h"
 
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QRadialGradient>
 
 namespace {
 
-const QColor kNormalColor(0xC8, 0xC8, 0xC8);
-const QColor kActiveColor(0xFF, 0xFF, 0xFF);
-const QColor kDisabledColor(0x5A, 0x5A, 0x5A);
+const QColor kNormalColor(0xD8, 0xDB, 0xE4);
+const QColor kActiveColor = Theme::AccentHover;
+const QColor kDisabledColor = Theme::TextDim;
 
 constexpr int kLogicalSize = 20;
 constexpr qreal kScale = 2.0; // rendered at 2x so icons stay sharp on HiDPI screens
@@ -175,27 +177,39 @@ QPixmap appLogo(int size, qreal devicePixelRatio)
     pixmap.fill(Qt::transparent);
     QPainter p(&pixmap);
     p.setRenderHint(QPainter::Antialiasing);
-    // Drawn on the 256x256 grid of packaging/linux/org.github.potlinux.svg.
+    // Drawn on the 256x256 grid of packaging/linux/org.github.topplayer.svg.
     p.scale(size / 256.0, size / 256.0);
 
+    // Obsidian tile.
     QLinearGradient background(0, 16, 0, 240);
-    background.setColorAt(0, QColor(0x2B, 0x2B, 0x2B));
-    background.setColorAt(1, QColor(0x15, 0x15, 0x15));
-    p.setPen(QPen(QColor(0x3A, 0x3A, 0x3A), 1));
+    background.setColorAt(0, QColor(0x1E, 0x21, 0x29));
+    background.setColorAt(1, QColor(0x0E, 0x0F, 0x12));
+    p.setPen(QPen(Theme::Border, 1));
     p.setBrush(background);
     p.drawRoundedRect(QRectF(16.5, 16.5, 223, 223), 47.5, 47.5);
 
-    QLinearGradient amber(100, 76, 184, 180);
-    amber.setColorAt(0, QColor(0xFF, 0xC8, 0x4A));
-    amber.setColorAt(1, QColor(0xF2, 0x9A, 0x00));
-    p.setPen(QPen(QBrush(amber), 14, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    p.setBrush(amber);
-    p.drawPath(polygon({{100, 76}, {184, 128}, {100, 180}}));
-
+    // Neon glow behind the play triangle.
+    QRadialGradient glow(QPointF(124, 128), 96);
+    glow.setColorAt(0, QColor(0x00, 0xD2, 0xFF, 90));
+    glow.setColorAt(1, QColor(0x00, 0xD2, 0xFF, 0));
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor(0x3D, 0x3D, 0x3D));
-    p.drawRoundedRect(QRectF(56, 200, 144, 8), 4, 4);
-    p.setBrush(QColor(0xFF, 0xB4, 0x1E));
-    p.drawRoundedRect(QRectF(56, 200, 88, 8), 4, 4);
+    p.setBrush(glow);
+    p.drawEllipse(QPointF(124, 128), 96, 96);
+
+    // Play triangle with rounded corners.
+    QLinearGradient cyan(84, 64, 196, 192);
+    cyan.setColorAt(0, Theme::AccentHover);
+    cyan.setColorAt(1, Theme::AccentDeep);
+    p.setPen(QPen(QBrush(cyan), 16, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(cyan);
+    p.drawPath(polygon({{84, 64}, {196, 128}, {84, 192}}));
+
+    // A geometric "T" cut out of the triangle, showing the tile through it.
+    QPainterPath letter;
+    letter.addRoundedRect(QRectF(93, 100, 60, 18), 3, 3);
+    letter.addRoundedRect(QRectF(114, 108, 18, 56), 3, 3);
+    p.setPen(Qt::NoPen);
+    p.setBrush(background);
+    p.drawPath(letter.simplified());
     return pixmap;
 }

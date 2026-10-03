@@ -36,11 +36,11 @@ QString systemLanguage();
 
 // Where a downloaded subtitle for `mediaPath` goes: beside the video as
 // "<video name>.<language>.<format>" when `besideVideo` and that folder is
-// writable, else in ~/.cache/potplayer-linux/subtitles. Never an existing file.
+// writable, else in ~/.cache/top-player/subtitles. Never an existing file.
 QString savePath(const QString &mediaPath, const QString &language, const QString &format, bool besideVideo);
 QString cacheDir();
 
-// Settings, in ~/.config/potplayer-linux/settings.ini.
+// Settings, in ~/.config/top-player/settings.ini.
 QString userApiKey();
 void setUserApiKey(const QString &key);
 // The user's key, else the one built in (empty if neither).

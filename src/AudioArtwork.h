@@ -5,7 +5,7 @@
 #include <QVariantMap>
 
 // Cover art lookup for audio files, track metadata, and the audio display
-// settings stored in ~/.config/potplayer-linux.
+// settings stored in ~/.config/top-player.
 namespace AudioArtwork {
 
 // What the video area shows while an audio file plays.

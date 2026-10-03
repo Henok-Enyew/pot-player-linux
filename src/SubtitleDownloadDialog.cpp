@@ -1,5 +1,6 @@
 #include "SubtitleDownloadDialog.h"
 #include "MediaFiles.h"
+#include "Theme.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -29,7 +30,7 @@ constexpr int kResultRole = Qt::UserRole;
 constexpr int kSortRole = Qt::UserRole + 1;
 constexpr int kBadgeRole = Qt::UserRole + 2;
 
-const QColor kAmber(0xFF, 0xB4, 0x1E);
+const QColor kAccent = Theme::Accent;
 const QColor kErrorColor(0xFF, 0x6B, 0x5B);
 
 // Sorts numeric columns by value instead of text.
@@ -77,12 +78,12 @@ public:
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing);
         painter->setPen(Qt::NoPen);
-        painter->setBrush(kAmber);
+        painter->setBrush(kAccent);
         painter->drawRoundedRect(pill, height / 2.0, height / 2.0);
         QFont font = opt.font;
         font.setBold(true);
         painter->setFont(font);
-        painter->setPen(QColor(0x1A, 0x1A, 0x1A));
+        painter->setPen(Theme::Surface);
         painter->drawText(pill, Qt::AlignCenter, badge);
         painter->restore();
     }

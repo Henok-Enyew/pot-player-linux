@@ -60,6 +60,10 @@ public:
     // Sets a property asynchronously from its string form, e.g. ("speed", "1.5").
     void setMpvProperty(const QString &name, const QString &value);
 
+    // The OpenGL renderer and version the video is drawn with, e.g.
+    // "Mesa Intel(R) UHD Graphics 620 (OpenGL 4.6)"; empty until shown.
+    QString glRenderer() const { return m_glRenderer; }
+
     // Tracks of `type` ("video", "audio" or "sub") from mpv's track-list.
     QList<QVariantMap> tracks(const QString &type) const;
     // Human-readable track name, e.g. "#2: Commentary [jpn] (aac)".
@@ -112,6 +116,7 @@ private:
     // Commands that start playback, deferred until the render context exists.
     QList<QStringList> m_pendingLoads;
     QStringList m_pendingSubtitles;
+    QString m_glRenderer;
     QSet<QString> m_initializedProperties;
     QSet<QString> m_stateProperties;
     bool m_fileLoaded = false;

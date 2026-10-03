@@ -51,6 +51,7 @@ PlayerMenu::PlayerMenu(MpvWidget *mpv, MainWindow *window)
     buildSubtitleMenu();
     addSeparator();
     buildWindowMenu();
+    buildHelpMenu();
 
     connect(this, &QMenu::aboutToShow, this, &PlayerMenu::syncState);
 }
@@ -280,6 +281,12 @@ void PlayerMenu::buildWindowMenu()
 
     window->addSeparator();
     addItem(window, tr("Exit"), [this] { m_window->close(); }, QKeySequence(Qt::Key_Q));
+}
+
+void PlayerMenu::buildHelpMenu()
+{
+    QMenu *help = addMenu(tr("Help"));
+    addItem(help, tr("About Top Player"), [this] { m_window->showAbout(); }, QKeySequence(Qt::Key_F1));
 }
 
 QAction *PlayerMenu::addItem(QMenu *menu, const QString &text, std::function<void()> handler,

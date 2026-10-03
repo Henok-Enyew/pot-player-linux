@@ -33,7 +33,7 @@ OpenSubtitlesClient::OpenSubtitlesClient(QObject *parent)
     , m_network(new QNetworkAccessManager(this))
     , m_baseUrl(QStringLiteral("https://api.opensubtitles.com/api/v1"))
 {
-    const QString override = qEnvironmentVariable("POTPLAYER_OPENSUBTITLES_URL");
+    const QString override = qEnvironmentVariable("TOPPLAYER_OPENSUBTITLES_URL");
     if (!override.isEmpty())
         m_baseUrl = QUrl(override);
 }
@@ -41,7 +41,7 @@ OpenSubtitlesClient::OpenSubtitlesClient(QObject *parent)
 QByteArray OpenSubtitlesClient::userAgent()
 {
     // OpenSubtitles asks API consumers to name themselves.
-    return QByteArrayLiteral("PotPlayerLinux v" APP_VERSION);
+    return QByteArrayLiteral("TopPlayer v" APP_VERSION);
 }
 
 QNetworkRequest OpenSubtitlesClient::apiRequest(const QString &endpoint, const QUrlQuery &query) const

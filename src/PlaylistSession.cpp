@@ -37,7 +37,20 @@ namespace PlaylistSession {
 
 QString configDir()
 {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/potplayer-linux");
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/top-player");
+}
+
+void migrateLegacyConfig()
+{
+    const QString target = configDir();
+    const QDir legacy(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+                      + QStringLiteral("/potplayer-linux"));
+    if (QFileInfo::exists(target) || !legacy.exists())
+        return;
+    if (!QDir().mkpath(target))
+        return;
+    for (const QFileInfo &file : legacy.entryInfoList(QDir::Files | QDir::Hidden))
+        QFile::copy(file.absoluteFilePath(), target + QLatin1Char('/') + file.fileName());
 }
 
 QString sessionFile()

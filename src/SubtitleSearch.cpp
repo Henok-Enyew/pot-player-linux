@@ -10,8 +10,8 @@
 #include <QStandardPaths>
 #include <QtEndian>
 
-#ifndef POTPLAYER_OPENSUBTITLES_API_KEY
-#define POTPLAYER_OPENSUBTITLES_API_KEY ""
+#ifndef TOPPLAYER_OPENSUBTITLES_API_KEY
+#define TOPPLAYER_OPENSUBTITLES_API_KEY ""
 #endif
 
 namespace {
@@ -221,7 +221,7 @@ QString systemLanguage()
 QString cacheDir()
 {
     return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation)
-        + QStringLiteral("/potplayer-linux/subtitles");
+        + QStringLiteral("/top-player/subtitles");
 }
 
 QString savePath(const QString &mediaPath, const QString &language, const QString &format, bool besideVideo)
@@ -255,7 +255,7 @@ void setUserApiKey(const QString &key)
 
 QString builtInApiKey()
 {
-    return QString::fromLatin1(POTPLAYER_OPENSUBTITLES_API_KEY);
+    return QString::fromLatin1(TOPPLAYER_OPENSUBTITLES_API_KEY);
 }
 
 QString apiKey()

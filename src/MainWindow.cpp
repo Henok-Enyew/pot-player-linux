@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "AboutDialog.h"
 #include "AudioController.h"
 #include "ControlBar.h"
 #include "EmptyStateWidget.h"
@@ -371,6 +372,18 @@ void MainWindow::openSubtitleDownloadDialog()
         m_osd->showValue(tr("Subtitle loaded:"), QFileInfo(file).fileName());
     });
     dialog->open();
+}
+
+void MainWindow::showAbout()
+{
+    if (m_about) {
+        m_about->raise();
+        m_about->activateWindow();
+        return;
+    }
+    m_about = new AboutDialog(m_mpv, this);
+    m_about->setAttribute(Qt::WA_DeleteOnClose);
+    m_about->open();
 }
 
 void MainWindow::openSubtitleSettingsDialog()

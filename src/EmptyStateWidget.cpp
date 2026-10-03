@@ -1,5 +1,6 @@
 #include "EmptyStateWidget.h"
 #include "Icons.h"
+#include "Theme.h"
 
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -19,9 +20,9 @@
 
 namespace {
 
-const QColor kCenterColor(0x24, 0x24, 0x24);
-const QColor kEdgeColor(0x12, 0x12, 0x12);
-const QColor kAccentColor(0xFF, 0xB4, 0x1E);
+const QColor kCenterColor = Theme::Panel;
+const QColor kEdgeColor = Theme::Surface;
+const QColor kAccentColor = Theme::Accent;
 
 constexpr int kFadeInMs = 200;
 constexpr int kFadeOutMs = 280;
@@ -52,9 +53,9 @@ EmptyStateWidget::EmptyStateWidget(QWidget *parent)
     m_logo->setAlignment(Qt::AlignCenter);
     m_title->setObjectName(QStringLiteral("EmptyStateTitle"));
     m_title->setAlignment(Qt::AlignCenter);
-    m_title->setText(QStringLiteral("<span style='color:#ececec'>PotPlayer</span> "
-                                    "<span style='color:#ffb41e'>Linux</span>"));
-    m_title->setAccessibleName(tr("PotPlayer Linux"));
+    m_title->setText(QStringLiteral("<span style='color:%1'>Top</span> <span style='color:%2'>Player</span>")
+                         .arg(Theme::hex(Theme::TextPrimary), Theme::hex(Theme::Accent)));
+    m_title->setAccessibleName(tr("Top Player"));
     m_hint->setObjectName(QStringLiteral("EmptyStateHint"));
     m_hint->setAlignment(Qt::AlignCenter);
 

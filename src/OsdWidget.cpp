@@ -1,4 +1,5 @@
 #include "OsdWidget.h"
+#include "Theme.h"
 #include "TimeFormat.h"
 
 #include <QEvent>
@@ -11,7 +12,7 @@
 
 namespace {
 
-const QColor kAccentColor(0xFF, 0xB4, 0x1E); // PotPlayer amber
+const QColor kAccentColor = Theme::Accent;
 const QColor kTextColor(0xFF, 0xFF, 0xFF);
 const QColor kOutlineColor(0, 0, 0, 200);
 

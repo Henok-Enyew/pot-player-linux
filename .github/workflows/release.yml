@@ -9,7 +9,7 @@ on:
   pull_request:
     paths:
       - 'packaging/**'
-      - 'org.github.potlinux.yaml'
+      - 'org.github.topplayer.yaml'
       - '.github/workflows/release.yml'
 
 concurrency:
@@ -92,13 +92,13 @@ jobs:
           rpm_version="${VERSION//-/\~}"
           topdir="$PWD/rpmbuild"
           mkdir -p "$topdir/SOURCES"
-          sed -i "s/^Version:.*/Version:        ${rpm_version}/" packaging/rpm/pot-player.spec
-          git archive --format=tar.gz --prefix="pot-player-${rpm_version}/" \
-            -o "$topdir/SOURCES/pot-player-${rpm_version}.tar.gz" HEAD
-          dnf builddep -y packaging/rpm/pot-player.spec
-          rpmbuild -ba --define "_topdir $topdir" packaging/rpm/pot-player.spec
+          sed -i "s/^Version:.*/Version:        ${rpm_version}/" packaging/rpm/top-player.spec
+          git archive --format=tar.gz --prefix="top-player-${rpm_version}/" \
+            -o "$topdir/SOURCES/top-player-${rpm_version}.tar.gz" HEAD
+          dnf builddep -y packaging/rpm/top-player.spec
+          rpmbuild -ba --define "_topdir $topdir" packaging/rpm/top-player.spec
           mkdir -p dist
-          cp "$topdir"/RPMS/*/pot-player-[0-9]*.rpm "$topdir"/SRPMS/*.src.rpm dist/
+          cp "$topdir"/RPMS/*/top-player-[0-9]*.rpm "$topdir"/SRPMS/*.src.rpm dist/
           ls -l dist
 
       - uses: actions/upload-artifact@v4
@@ -128,15 +128,15 @@ jobs:
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          manifest-path: org.github.potlinux.yaml
-          bundle: Pot_Player-${{ needs.version.outputs.version }}-x86_64.flatpak
+          manifest-path: org.github.topplayer.yaml
+          bundle: Top_Player-${{ needs.version.outputs.version }}-x86_64.flatpak
           upload-artifact: false
-          cache-key: flatpak-builder-${{ hashFiles('org.github.potlinux.yaml') }}
+          cache-key: flatpak-builder-${{ hashFiles('org.github.topplayer.yaml') }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: flatpak
-          path: Pot_Player-*.flatpak
+          path: Top_Player-*.flatpak
           if-no-files-found: error
 
   publish:
@@ -160,7 +160,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          name: Pot Player ${{ needs.version.outputs.version }}
+          name: Top Player ${{ needs.version.outputs.version }}
           files: dist/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}

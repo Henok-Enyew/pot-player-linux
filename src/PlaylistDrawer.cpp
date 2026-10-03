@@ -3,6 +3,7 @@
 #include "MediaFiles.h"
 #include "MpvWidget.h"
 #include "PlaylistSession.h"
+#include "Theme.h"
 #include "TimeFormat.h"
 
 #include <QAction>
@@ -29,8 +30,8 @@ namespace {
 
 constexpr int kDrawerWidth = 280;
 constexpr int kAnimationMs = 180;
-const QColor kPlayingColor(0xFF, 0xB4, 0x1E);
-const QColor kDurationColor(0x8A, 0x8A, 0x8A);
+const QColor kPlayingColor = Theme::Accent;
+const QColor kDurationColor = Theme::TextSecondary;
 // Item data: the entry's filename, and its duration text.
 constexpr int kFilenameRole = Qt::UserRole;
 constexpr int kDurationRole = Qt::UserRole + 1;

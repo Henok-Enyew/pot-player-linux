@@ -1,5 +1,5 @@
 <RCC>
     <qresource prefix="/skin">
-        <file alias="potplayer-dark.qss">skin/potplayer-dark.qss</file>
+        <file alias="top-player.qss">skin/top-player.qss</file>
     </qresource>
 </RCC>

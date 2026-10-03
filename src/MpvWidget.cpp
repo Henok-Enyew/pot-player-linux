@@ -377,6 +377,12 @@ void MpvWidget::initializeGL()
 
     mpv_render_context_set_update_callback(m_renderCtx, &MpvWidget::onMpvRenderUpdate, this);
 
+    QOpenGLFunctions *gl = context()->functions();
+    const auto glString = [gl](GLenum name) {
+        return QString::fromLatin1(reinterpret_cast<const char *>(gl->glGetString(name)));
+    };
+    m_glRenderer = QStringLiteral("%1 (%2)").arg(glString(GL_RENDERER), glString(GL_VERSION));
+
     for (const QStringList &cmd : std::exchange(m_pendingLoads, {}))
         command(cmd);
 }

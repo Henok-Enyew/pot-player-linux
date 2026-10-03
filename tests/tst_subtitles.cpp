@@ -198,7 +198,7 @@ void SubtitleTest::initTestCase()
     }
 
     QVERIFY(m_server.listen());
-    qputenv("POTPLAYER_OPENSUBTITLES_URL", m_server.url(QStringLiteral("/api/v1")).toUtf8());
+    qputenv("TOPPLAYER_OPENSUBTITLES_URL", m_server.url(QStringLiteral("/api/v1")).toUtf8());
 }
 
 MockServer::Response SubtitleTest::defaultResponse(const MockServer::Request &request)
@@ -439,7 +439,7 @@ void SubtitleTest::dialogSearchesForPlayingFile()
     QCOMPARE(query.queryItemValue(QStringLiteral("query"), QUrl::FullyDecoded), QStringLiteral("the matrix"));
     QCOMPARE(query.queryItemValue(QStringLiteral("year")), QStringLiteral("1999"));
     QCOMPARE(request.headers.value("api-key"), QByteArray("test-key"));
-    QCOMPARE(request.headers.value("user-agent"), QByteArray("PotPlayerLinux v" APP_VERSION));
+    QCOMPARE(request.headers.value("user-agent"), QByteArray("TopPlayer v" APP_VERSION));
 
     // The exact (hash) match comes first, then by downloads.
     auto *table = dialog->findChild<QTreeWidget *>(QStringLiteral("SubtitleResults"));

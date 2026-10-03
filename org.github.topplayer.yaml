@@ -1,16 +1,16 @@
-# Flatpak manifest for Pot Player.
+# Flatpak manifest for Top Player.
 #
 # Local build (needs flatpak-builder and the Flathub remote):
 #   flatpak install -y flathub org.kde.Sdk//6.11 org.kde.Platform//6.11
-#   flatpak-builder --user --install --force-clean build-flatpak org.github.potlinux.yaml
-#   flatpak run org.github.potlinux
+#   flatpak-builder --user --install --force-clean build-flatpak org.github.topplayer.yaml
+#   flatpak run org.github.topplayer
 #
 # The release workflow builds this into a single-file .flatpak bundle.
-app-id: org.github.potlinux
+app-id: org.github.topplayer
 runtime: org.kde.Platform
 runtime-version: '6.11'
 sdk: org.kde.Sdk
-command: pot-player
+command: top-player
 finish-args:
   - --share=ipc
   - --socket=fallback-x11
@@ -95,7 +95,7 @@ modules:
         url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.41.0.tar.gz
         sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
 
-  - name: pot-player
+  - name: top-player
     buildsystem: cmake-ninja
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release

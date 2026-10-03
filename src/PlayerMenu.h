@@ -42,6 +42,7 @@ private:
     void buildSubtitleMenu();
     void buildPlaybackMenu();
     void buildWindowMenu();
+    void buildHelpMenu();
 
     QAction *addItem(QMenu *menu, const QString &text, std::function<void()> handler,
                      const QKeySequence &shortcut = {});

@@ -1,9 +1,11 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QPointer>
 #include <QTimer>
 #include <QUrl>
 
+class AboutDialog;
 class AudioController;
 class ControlBar;
 class EmptyStateWidget;
@@ -45,6 +47,8 @@ public:
     // Opens the OpenSubtitles search for the playing file.
     void openSubtitleDownloadDialog();
     void openSubtitleSettingsDialog();
+    // Help -> About Top Player (F1).
+    void showAbout();
     void toggleFullScreen();
     void setAlwaysOnTop(bool onTop);
     // Resizes the window so the video shows at `scale` times its display size.
@@ -93,6 +97,7 @@ private:
     ThumbnailGenerator *m_thumbnails = nullptr;
     ThumbnailPopup *m_thumbnailPopup = nullptr;
     QWidget *m_root = nullptr;
+    QPointer<AboutDialog> m_about;
     QTimer m_idleTimer;
     int m_hoverSecond = -1;
     QPoint m_popupAnchor;

@@ -2,7 +2,7 @@
 // at different window sizes, and its open actions and drop zone. Needs a
 // display (run under xvfb-run) and ffmpeg, which generates the test clip.
 //
-// Set POTPLAYER_SCREENSHOTS=<dir> to save a screenshot of each layout case.
+// Set TOPPLAYER_SCREENSHOTS=<dir> to save a screenshot of each layout case.
 
 #include "EmptyStateWidget.h"
 #include "MainWindow.h"
@@ -145,7 +145,7 @@ void EmptyStateTest::shownOnStartup()
     QCOMPARE(m_empty->geometry(), m_mpv->rect());
     auto *title = m_empty->findChild<QLabel *>(QStringLiteral("EmptyStateTitle"));
     QVERIFY(title);
-    QCOMPARE(title->accessibleName(), QStringLiteral("PotPlayer Linux"));
+    QCOMPARE(title->accessibleName(), QStringLiteral("Top Player"));
     auto *hint = m_empty->findChild<QLabel *>(QStringLiteral("EmptyStateHint"));
     QVERIFY(hint && hint->isVisible());
     QCOMPARE(hint->text(), QStringLiteral("or drag and drop files and folders here"));
@@ -199,7 +199,7 @@ void EmptyStateTest::layout()
     auto *logoLabel = m_empty->findChild<QLabel *>(QStringLiteral("EmptyStateLogo"));
     QCOMPARE(logoLabel->isVisible(), logo);
 
-    const QString screenshots = qEnvironmentVariable("POTPLAYER_SCREENSHOTS");
+    const QString screenshots = qEnvironmentVariable("TOPPLAYER_SCREENSHOTS");
     if (!screenshots.isEmpty()) {
         QDir().mkpath(screenshots);
         m_window->grab().save(QStringLiteral("%1/empty-state-%2.png").arg(screenshots, QLatin1String(QTest::currentDataTag())));
