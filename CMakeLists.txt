@@ -26,6 +26,14 @@ option(POTPLAYER_BUILD_TESTS "Build the integration tests (need an X or Wayland 
 # Everything but main(), so the tests can drive the real window.
 add_library(pot-player-core OBJECT
     resources/skin.qrc
+    src/ArtworkExtractor.cpp
+    src/ArtworkExtractor.h
+    src/AudioArtwork.cpp
+    src/AudioArtwork.h
+    src/AudioController.cpp
+    src/AudioController.h
+    src/AudioView.cpp
+    src/AudioView.h
     src/ControlBar.cpp
     src/ControlBar.h
     src/EmptyStateWidget.cpp

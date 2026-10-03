@@ -4,6 +4,7 @@
 #include <QTimer>
 #include <QUrl>
 
+class AudioController;
 class ControlBar;
 class EmptyStateWidget;
 class MpvWidget;
@@ -39,6 +40,7 @@ public:
     // last one (as configured). Returns true if a queue was restored.
     bool startSession(bool restore);
     PlaylistController *playlist() const { return m_playlist; }
+    AudioController *audio() const { return m_audio; }
     void loadSubtitle(const QString &path);
     void toggleFullScreen();
     void setAlwaysOnTop(bool onTop);
@@ -84,6 +86,7 @@ private:
     ControlBar *m_controlBar = nullptr;
     PlaylistDrawer *m_drawer = nullptr;
     PlaylistController *m_playlist = nullptr;
+    AudioController *m_audio = nullptr;
     ThumbnailGenerator *m_thumbnails = nullptr;
     ThumbnailPopup *m_thumbnailPopup = nullptr;
     QWidget *m_root = nullptr;

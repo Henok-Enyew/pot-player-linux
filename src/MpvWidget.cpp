@@ -57,7 +57,7 @@ QVariant nodeToVariant(const mpv_node *node)
 
 // Player state mirrored by widgets through propertyUpdated() only.
 constexpr const char *kStateProperties[] = {
-    "time-pos", "duration", "playlist", "chapter-list", "path", "idle-active", "playlist-pos",
+    "time-pos", "duration", "playlist", "chapter-list", "path", "idle-active", "playlist-pos", "metadata",
 };
 
 // Properties whose changes are also forwarded through propertyChanged().
@@ -459,22 +459,38 @@ void MpvWidget::processMpvEvents()
         }
         case MPV_EVENT_START_FILE:
             m_fileLoaded = false;
+            m_audioOnly = false;
             m_seeking = false;
             m_awaitingVideoSize = true;
             Q_EMIT fileStarted();
             break;
-        case MPV_EVENT_FILE_LOADED:
+        case MPV_EVENT_FILE_LOADED: {
             m_fileLoaded = true;
+            // Cover art (embedded or a cover file next to it) shows up as an
+            // "albumart" video track; it doesn't make a file a video.
+            bool hasAudio = false;
+            bool hasVideo = false;
+            for (const QVariant &entry : mpvProperty(QStringLiteral("track-list")).toList()) {
+                const QVariantMap track = entry.toMap();
+                const QString type = track.value(QStringLiteral("type")).toString();
+                if (type == QLatin1String("audio"))
+                    hasAudio = true;
+                else if (type == QLatin1String("video") && !track.value(QStringLiteral("albumart")).toBool())
+                    hasVideo = true;
+            }
+            m_audioOnly = hasAudio && !hasVideo;
             if (std::exchange(m_resetStart, false))
                 setMpvProperty(QStringLiteral("start"), QStringLiteral("none"));
             for (const QString &subtitle : std::exchange(m_pendingSubtitles, {}))
                 addSubtitle(subtitle);
+            Q_EMIT fileLoaded();
             break;
+        }
         case MPV_EVENT_SEEK:
             m_seeking = m_fileLoaded;
             break;
         case MPV_EVENT_VIDEO_RECONFIG:
-            if (m_awaitingVideoSize) {
+            if (m_awaitingVideoSize && !m_audioOnly) {
                 const QSize size(mpvProperty(QStringLiteral("dwidth")).toInt(),
                                  mpvProperty(QStringLiteral("dheight")).toInt());
                 if (!size.isEmpty()) {

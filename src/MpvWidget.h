@@ -45,6 +45,9 @@ public:
     void playlistPrev();
     // True while nothing is loaded (startup, after stop() or an empty playlist).
     bool isIdle() const;
+    // True if the loaded file has audio but no video, apart from cover art.
+    // Known from fileLoaded() on.
+    bool isAudioOnly() const { return m_audioOnly; }
     // The entry that is playing, or played last before a stop; -1 if none.
     int lastPlaylistPos() const { return m_lastPlaylistPos; }
 
@@ -77,9 +80,13 @@ Q_SIGNALS:
     void propertyUpdated(const QString &name, const QVariant &value);
     // Emitted as mpv starts opening a playlist entry.
     void fileStarted();
+    // Emitted once the entry's tracks are known (see isAudioOnly()).
+    void fileLoaded();
     // Emitted once playback resumes after a user seek.
     void seeked();
     // Emitted once per file, when the video's display size is first known.
+    // Not emitted for audio files, whose cover art or visualization is no
+    // reason to resize the window.
     void videoSizeKnown(const QSize &size);
 
 protected:
@@ -110,6 +117,7 @@ private:
     bool m_fileLoaded = false;
     bool m_seeking = false;
     bool m_awaitingVideoSize = false;
+    bool m_audioOnly = false;
     // The "start" option was set for a resumed entry and must not apply to later files.
     bool m_resetStart = false;
     // Mirrors idle-active for painting, which must not block on mpv.

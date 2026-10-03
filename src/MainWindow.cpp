@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "AudioController.h"
 #include "ControlBar.h"
 #include "EmptyStateWidget.h"
 #include "MediaFiles.h"
@@ -105,7 +106,9 @@ MainWindow::MainWindow(QWidget *parent)
     layout->addWidget(m_controlBar);
     setCentralWidget(m_root);
 
-    // Created before the OSD so that OSD messages draw on top of it.
+    // Stacked over the video in creation order: the audio view, then the start
+    // screen, then the OSD on top.
+    m_audio = new AudioController(m_mpv, this);
     m_emptyState = new EmptyStateWidget(m_mpv);
     m_osd = new OsdWidget(m_mpv);
     m_menu = new PlayerMenu(m_mpv, this);
@@ -127,6 +130,8 @@ MainWindow::MainWindow(QWidget *parent)
         if (!isFullScreen() && !isMaximized())
             resizeToVideo(size, 1.0);
     });
+    connect(m_audio, &AudioController::message, m_osd,
+            [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
     connect(m_menu, &PlayerMenu::osdRequested, m_osd,
             [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
     connect(m_controlBar, &ControlBar::openRequested, this, &MainWindow::openFileDialog);
@@ -190,6 +195,11 @@ void MainWindow::setupThumbnails()
     connect(seekBar, &SeekBar::hoverEnded, this, [this] {
         m_hoverSecond = -1;
         m_thumbnailPopup->hide();
+    });
+    // An audio file's "video" is its cover or a visualization: no previews.
+    connect(m_mpv, &MpvWidget::fileLoaded, this, [this] {
+        if (m_mpv->isAudioOnly())
+            m_thumbnails->setFile({});
     });
     connect(m_thumbnails, &ThumbnailGenerator::thumbnailReady, this, [this](int second, const QImage &image) {
         // Keep showing the previous frame until the one under the pointer arrives.
