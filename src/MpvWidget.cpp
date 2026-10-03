@@ -147,11 +147,32 @@ void MpvWidget::loadFiles(const QStringList &files, const QStringList &subtitles
     const QList<QStringList> commands = queueCommands(files, QStringLiteral("replace"));
 
     if (!m_renderCtx) {
-        m_pendingLoads = commands;
+        m_pendingLoads.clear();
+        for (const QStringList &cmd : commands)
+            m_pendingLoads.append({cmd, {}});
         return;
     }
     for (const QStringList &cmd : std::as_const(commands))
         command(cmd);
+}
+
+void MpvWidget::loadStream(const QString &url, const QVariantMap &options, bool append)
+{
+    QVariantMap cmd{
+        {QStringLiteral("name"), QStringLiteral("loadfile")},
+        {QStringLiteral("url"), url},
+        {QStringLiteral("flags"), append ? QStringLiteral("append-play") : QStringLiteral("replace")},
+    };
+    if (!options.isEmpty())
+        cmd.insert(QStringLiteral("options"), options);
+    if (append) {
+        runOrDefer(cmd);
+        return;
+    }
+    m_pendingSubtitles.clear();
+    if (!m_renderCtx)
+        m_pendingLoads.clear();
+    runOrDefer(cmd);
 }
 
 void MpvWidget::playFiles(const QStringList &files, int start)
@@ -174,7 +195,7 @@ void MpvWidget::loadPlaylist(const QString &path)
     m_pendingSubtitles.clear();
     const QStringList cmd{QStringLiteral("loadlist"), path, QStringLiteral("replace")};
     if (!m_renderCtx) {
-        m_pendingLoads = {cmd};
+        m_pendingLoads = {{cmd, {}}};
         return;
     }
     command(cmd);
@@ -203,10 +224,19 @@ void MpvWidget::restorePlaylist(const QStringList &files, int current, double re
 void MpvWidget::runOrDefer(const QList<QStringList> &commands)
 {
     if (!m_renderCtx) {
-        m_pendingLoads.append(commands);
+        for (const QStringList &cmd : commands)
+            m_pendingLoads.append({cmd, {}});
         return;
     }
     for (const QStringList &cmd : commands)
+        command(cmd);
+}
+
+void MpvWidget::runOrDefer(const QVariantMap &cmd)
+{
+    if (!m_renderCtx)
+        m_pendingLoads.append({{}, cmd});
+    else
         command(cmd);
 }
 
@@ -216,7 +246,7 @@ void MpvWidget::insertFiles(const QStringList &files, int row)
         return;
     const QList<QStringList> commands = queueCommands(files, QStringLiteral("append-play"));
     if (!m_renderCtx) {
-        m_pendingLoads.append(commands);
+        runOrDefer(commands);
         return;
     }
     // Commands run in order, so the appended entries are at count + i when they are moved.
@@ -374,7 +404,13 @@ void MpvWidget::command(const QStringList &args)
         reply = m_nextBatch++;
         m_batchReplies.insert(reply, args[1]);
     }
-    m_commandQueue.append({args, reply});
+    m_commandQueue.append({args, {}, reply});
+    sendQueuedCommands();
+}
+
+void MpvWidget::command(const QVariantMap &args)
+{
+    m_commandQueue.append({{}, args, 0});
     sendQueuedCommands();
 }
 
@@ -384,7 +420,9 @@ void MpvWidget::sendQueuedCommands()
     // loadlist (playing an entry, moving the new ones) wait for it to finish.
     while (!m_commandQueue.isEmpty() && m_pendingReplies < kMaxPendingReplies && !m_awaitedBatch) {
         const QueuedCommand next = m_commandQueue.takeFirst();
-        if (mpvCommandAsync(m_mpv, next.args, next.reply) >= 0) {
+        const int result = next.named.isEmpty() ? mpvCommandAsync(m_mpv, next.args, next.reply)
+                                                : mpvCommandNodeAsync(m_mpv, next.named, next.reply);
+        if (result >= 0) {
             ++m_pendingReplies;
             m_awaitedBatch = next.reply;
         } else if (next.reply) {
@@ -487,8 +525,12 @@ void MpvWidget::initializeGL()
 
     m_glRenderer = QString::fromLatin1(reinterpret_cast<const char *>(context()->functions()->glGetString(GL_RENDERER)));
 
-    for (const QStringList &cmd : std::exchange(m_pendingLoads, {}))
-        command(cmd);
+    for (const QueuedCommand &cmd : std::exchange(m_pendingLoads, {})) {
+        if (cmd.named.isEmpty())
+            command(cmd.args);
+        else
+            command(cmd.named);
+    }
 }
 
 void MpvWidget::paintGL()
@@ -583,6 +625,22 @@ void MpvWidget::processMpvEvents()
             m_awaitingVideoSize = true;
             Q_EMIT fileStarted();
             break;
+        case MPV_EVENT_END_FILE: {
+            const auto *end = static_cast<const mpv_event_end_file *>(event->data);
+            if (end->reason != MPV_END_FILE_REASON_ERROR)
+                break;
+            // The entry is still in the playlist; "path" was never set for it.
+            QString path;
+            for (const QVariant &entry : mpvProperty(QStringLiteral("playlist")).toList()) {
+                const QVariantMap map = entry.toMap();
+                if (map.value(QStringLiteral("id")).toLongLong() == end->playlist_entry_id) {
+                    path = map.value(QStringLiteral("filename")).toString();
+                    break;
+                }
+            }
+            Q_EMIT fileFailed(path, QString::fromUtf8(mpv_error_string(end->error)));
+            break;
+        }
         case MPV_EVENT_FILE_LOADED: {
             m_fileLoaded = true;
             // Cover art (embedded or a cover file next to it) shows up as an

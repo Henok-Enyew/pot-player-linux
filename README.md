@@ -186,19 +186,26 @@ live streams, with two tabs:
 
 - **Live TV** lists the channels of a country from the
   [iptv-org](https://github.com/iptv-org/iptv) playlists
-  (`https://iptv-org.github.io/iptv/countries/<code>.m3u`), or **All Channels
-  by Category** from its category index.
+  (`https://iptv-org.github.io/iptv/countries/<code>.m3u`), or **All
+  Countries** from its category index, with each channel's country.
 - **Online Radio** lists the stations of a country from the community
   [Radio-Browser](https://www.radio-browser.info) directory, most popular
   first, with their tags and bitrate.
 
-Ethiopia is selected by default and pinned at the top of the country list;
-the other countries follow alphabetically. The search box filters by name,
-language or genre as you type, and **Refresh** reloads the list from the
-server. Channel logos load in the background for the rows on screen.
+Ethiopia is selected by default and pinned at the top of the country list,
+followed by **All Countries** and then every other country alphabetically.
+The category box narrows the list to a genre (News, Sports, Movies, ...; tags
+for radio), the search box filters by name, language, genre or country as you
+type, and **Hide geo-blocked** (on by default) hides TV channels that only
+play in their own country. **Refresh** reloads the list from the server. Channel logos load in the background for the rows on screen.
 Double-click a channel (or select it and press **Play**) to watch it, titled
 with the channel's name; radio stations open in the audio view with the
-chosen visualization. Right-click → **Add to Current Playlist** queues a
+chosen visualization. TV streams are requested with the referrer and user
+agent their playlist asks for (`#EXTVLCOPT` lines), or a browser's user agent,
+since many TV servers refuse media players' own with 403 Forbidden. If a
+channel can't be played, its other streams in the list are tried in turn; a
+channel with none left is greyed out, with a message that it is offline or
+not available in your region. Right-click → **Add to Current Playlist** queues a
 stream instead. Lists and logos are cached in
 `~/.cache/top-player/streams/` for 24 hours, and the cached copy is used
 when the server can't be reached.

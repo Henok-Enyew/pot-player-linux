@@ -3,6 +3,7 @@
 #include "PlaylistSession.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
 #include <QCryptographicHash>
@@ -36,6 +37,7 @@ namespace {
 constexpr int kStationRole = Qt::UserRole; // index into m_stations
 constexpr int kLogoSize = 24;
 constexpr int kMaxLogoDownloads = 6;
+constexpr int kMaxGenres = 40; // Radio-Browser has thousands of tags
 const QString kIndexCode = QStringLiteral("index");
 
 enum Column { NameColumn, InfoColumn, BitrateColumn };
@@ -88,7 +90,9 @@ LiveStreamDialog::LiveStreamDialog(QWidget *parent)
     , m_fetcher(new StreamFetcher(this))
     , m_tabs(new QTabBar(this))
     , m_country(new QComboBox(this))
+    , m_genre(new QComboBox(this))
     , m_filter(new QLineEdit(this))
+    , m_hideGeoBlocked(new QCheckBox(tr("Hide geo-blocked"), this))
     , m_refresh(new QToolButton(this))
     , m_view(new QTreeWidget(this))
     , m_status(new QLabel(this))
@@ -108,8 +112,16 @@ LiveStreamDialog::LiveStreamDialog(QWidget *parent)
 
     m_country->setObjectName(QStringLiteral("LiveStreamCountry"));
     m_country->setMinimumContentsLength(14);
+    m_country->setMaxVisibleItems(20);
+    m_country->setToolTip(tr("Country, or all countries"));
+    m_genre->setObjectName(QStringLiteral("LiveStreamGenre"));
+    m_genre->setMinimumContentsLength(10);
+    m_genre->setMaxVisibleItems(20);
+    m_genre->setToolTip(tr("Category"));
+    m_hideGeoBlocked->setObjectName(QStringLiteral("LiveStreamHideGeoBlocked"));
+    m_hideGeoBlocked->setToolTip(tr("Hide channels that only play in their own country"));
     m_filter->setObjectName(QStringLiteral("LiveStreamFilter"));
-    m_filter->setPlaceholderText(tr("Search by name, language or genre"));
+    m_filter->setPlaceholderText(tr("Search by name, country, language or genre"));
     m_filter->setClearButtonEnabled(true);
     m_filter->addAction(skinIcon(IconType::Search), QLineEdit::LeadingPosition);
     m_refresh->setObjectName(QStringLiteral("LiveStreamRefresh"));
@@ -141,7 +153,9 @@ LiveStreamDialog::LiveStreamDialog(QWidget *parent)
 
     auto *filters = new QHBoxLayout;
     filters->addWidget(m_country);
+    filters->addWidget(m_genre);
     filters->addWidget(m_filter, 1);
+    filters->addWidget(m_hideGeoBlocked);
     filters->addWidget(m_refresh);
     auto *buttons = new QHBoxLayout;
     buttons->addWidget(m_status, 1);
@@ -156,12 +170,15 @@ LiveStreamDialog::LiveStreamDialog(QWidget *parent)
 
     const QSettings settings(settingsFile(), QSettings::IniFormat);
     m_tabs->setCurrentIndex(settings.value(QStringLiteral("live/source"), 0).toInt() == Radio ? Radio : Tv);
+    m_hideGeoBlocked->setChecked(settings.value(QStringLiteral("live/hideGeoBlocked"), true).toBool());
+    m_hideGeoBlocked->setVisible(source() == Tv);
     fillCountries();
 
     connect(m_fetcher, &StreamFetcher::loaded, this, &LiveStreamDialog::onLoaded);
     connect(m_fetcher, &StreamFetcher::failed, this, &LiveStreamDialog::onFailed);
     connect(m_tabs, &QTabBar::currentChanged, this, [this] {
         QSettings(settingsFile(), QSettings::IniFormat).setValue(QStringLiteral("live/source"), source());
+        m_hideGeoBlocked->setVisible(source() == Tv);
         fillCountries();
         reload();
     });
@@ -171,6 +188,11 @@ LiveStreamDialog::LiveStreamDialog(QWidget *parent)
         reload();
     });
     connect(m_filter, &QLineEdit::textChanged, this, &LiveStreamDialog::applyFilter);
+    connect(m_genre, &QComboBox::currentIndexChanged, this, &LiveStreamDialog::applyFilter);
+    connect(m_hideGeoBlocked, &QCheckBox::toggled, this, [this](bool hide) {
+        QSettings(settingsFile(), QSettings::IniFormat).setValue(QStringLiteral("live/hideGeoBlocked"), hide);
+        applyFilter();
+    });
     connect(m_refresh, &QToolButton::clicked, this, [this] { reload(true); });
     connect(m_view, &QTreeWidget::itemActivated, this, &LiveStreamDialog::playCurrent);
     connect(m_view, &QWidget::customContextMenuRequested, this, &LiveStreamDialog::showContextMenu);
@@ -217,6 +239,67 @@ void LiveStreamDialog::setFilterText(const QString &text)
     m_filter->setText(text);
 }
 
+void LiveStreamDialog::setGenre(const QString &genre)
+{
+    const int index = genre.isEmpty() ? 0 : m_genre->findData(genre, Qt::UserRole, Qt::MatchFixedString);
+    if (index >= 0)
+        m_genre->setCurrentIndex(index);
+}
+
+QString LiveStreamDialog::genre() const
+{
+    return m_genre->currentData().toString();
+}
+
+void LiveStreamDialog::fillGenres()
+{
+    // Keeps the chosen genre across lists that have it, e.g. "News" from country to country.
+    const QString current = genre();
+    const QSignalBlocker blocker(m_genre);
+    m_genre->clear();
+    m_genre->addItem(tr("All Categories"), QString());
+    QStringList list = StreamCatalog::genres(m_stations, kMaxGenres);
+    std::sort(list.begin(), list.end(), [](const QString &a, const QString &b) { return a.localeAwareCompare(b) < 0; });
+    for (const QString &genre : std::as_const(list))
+        m_genre->addItem(genre, genre);
+    m_genre->setCurrentIndex(std::max(0, m_genre->findData(current, Qt::UserRole, Qt::MatchFixedString)));
+}
+
+void LiveStreamDialog::markUnavailable(const QString &url)
+{
+    m_unavailable.insert(url);
+    const QColor grey = palette().color(QPalette::Disabled, QPalette::Text);
+    for (int row = 0; row < m_view->topLevelItemCount(); ++row) {
+        QTreeWidgetItem *item = m_view->topLevelItem(row);
+        const Station *station = stationOf(item);
+        if (!station || station->url != url)
+            continue;
+        for (int column = 0; column < m_view->columnCount(); ++column)
+            item->setForeground(column, grey);
+        item->setToolTip(NameColumn, tr("Could not be played: offline, or not available in your region\n%1").arg(url));
+    }
+}
+
+QList<Station> LiveStreamDialog::alternatives(const Station &station) const
+{
+    QList<Station> result;
+    // Any feed of the channel will do: "EBS.us@HD" or "EBS.us@SD".
+    const QString channel = station.id.section(QLatin1Char('@'), 0, 0);
+    if (channel.isEmpty())
+        return result;
+    for (const Station &other : m_stations) {
+        if (other.id.section(QLatin1Char('@'), 0, 0) == channel && other.url != station.url && !m_unavailable.contains(other.url))
+            result.append(other);
+    }
+    // Ones that play anywhere first, then by resolution.
+    std::stable_sort(result.begin(), result.end(), [](const Station &a, const Station &b) {
+        if (a.isGeoBlocked() != b.isGeoBlocked())
+            return !a.isGeoBlocked();
+        return a.quality.left(a.quality.size() - 1).toInt() > b.quality.left(b.quality.size() - 1).toInt();
+    });
+    return result;
+}
+
 void LiveStreamDialog::fillCountries()
 {
     const QSettings settings(settingsFile(), QSettings::IniFormat);
@@ -227,12 +310,12 @@ void LiveStreamDialog::fillCountries()
     const QList<StreamCatalog::Country> countries = StreamCatalog::countries();
     for (int i = 0; i < countries.size(); ++i) {
         m_country->addItem(countries[i].name, countries[i].code);
-        if (i == 0)
-            m_country->insertSeparator(1); // Ethiopia stays pinned above the rest
-    }
-    if (source() == Tv) {
-        m_country->insertSeparator(m_country->count());
-        m_country->addItem(tr("All Channels by Category"), kIndexCode);
+        if (i == 0) {
+            // Ethiopia and all countries stay pinned above the rest.
+            if (source() == Tv)
+                m_country->addItem(tr("All Countries"), kIndexCode);
+            m_country->insertSeparator(m_country->count());
+        }
     }
     m_country->setCurrentIndex(std::max(0, m_country->findData(saved)));
 }
@@ -296,6 +379,8 @@ void LiveStreamDialog::populate()
     m_view->setUpdatesEnabled(false);
     m_view->clear();
     const bool radio = source() == Radio;
+    // Names the country where it isn't the one picked, e.g. in All Countries.
+    const QString listCountry = StreamCatalog::countryName(country());
     QList<QTreeWidgetItem *> items;
     items.reserve(m_stations.size());
     for (int i = 0; i < m_stations.size(); ++i) {
@@ -303,7 +388,7 @@ void LiveStreamDialog::populate()
         auto *item = new StationItem;
         item->setText(NameColumn, station.name);
         QStringList info;
-        if (!station.country.isEmpty() && !radio)
+        if (!station.country.isEmpty() && !radio && station.country != listCountry)
             info.append(station.country);
         if (!station.genre.isEmpty())
             info.append(station.genre);
@@ -324,15 +409,22 @@ void LiveStreamDialog::populate()
     }
     m_view->addTopLevelItems(items);
     m_view->setUpdatesEnabled(true);
+    for (const QString &url : std::as_const(m_unavailable))
+        markUnavailable(url);
+    fillGenres();
     applyFilter();
 }
 
 void LiveStreamDialog::applyFilter()
 {
     const QString filter = m_filter->text();
+    const QString genre = this->genre();
+    const bool hideGeoBlocked = source() == Tv && m_hideGeoBlocked->isChecked();
     for (int row = 0; row < m_view->topLevelItemCount(); ++row) {
         QTreeWidgetItem *item = m_view->topLevelItem(row);
-        item->setHidden(!StreamCatalog::matches(*stationOf(item), filter));
+        const Station &station = *stationOf(item);
+        item->setHidden((hideGeoBlocked && station.isGeoBlocked()) || !StreamCatalog::hasGenre(station, genre)
+                        || !StreamCatalog::matches(station, filter));
     }
     updateStatus();
     QTimer::singleShot(0, this, &LiveStreamDialog::requestVisibleLogos);

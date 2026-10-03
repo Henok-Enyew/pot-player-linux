@@ -8,6 +8,7 @@
 #include <QSet>
 #include <QStringList>
 
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -35,6 +36,17 @@ public:
     QString country() const;
     void setCountry(const QString &code);
     void setFilterText(const QString &text);
+    // Shows only stations of `genre` (a group-title or tag); empty for all.
+    void setGenre(const QString &genre);
+    QString genre() const;
+
+    // Marks a stream that failed to play: greyed out and skipped as an alternative.
+    void markUnavailable(const QString &url);
+    bool isUnavailable(const QString &url) const { return m_unavailable.contains(url); }
+    // Other streams of the same channel in the loaded list (same iptv-org
+    // channel ID, any feed), ones that play anywhere and in the best quality
+    // first, leaving out ones known not to work.
+    QList<StreamCatalog::Station> alternatives(const StreamCatalog::Station &station) const;
 
     QTreeWidget *view() const { return m_view; }
     // The stations shown (after filtering), in display order.
@@ -52,6 +64,7 @@ private:
     QString cacheKey() const;
     QUrl sourceUrl() const;
     void fillCountries();
+    void fillGenres();
     void onLoaded(const QString &key, const QByteArray &data, const QDateTime &fetched, bool fromCache);
     void onFailed(const QString &key, const QString &error);
     void populate();
@@ -70,7 +83,9 @@ private:
     StreamFetcher *m_fetcher;
     QTabBar *m_tabs;
     QComboBox *m_country;
+    QComboBox *m_genre;
     QLineEdit *m_filter;
+    QCheckBox *m_hideGeoBlocked;
     QToolButton *m_refresh;
     QTreeWidget *m_view;
     QLabel *m_status;
@@ -81,6 +96,7 @@ private:
     QString m_loadingKey;
     bool m_loading = false;
     QString m_statusText;
+    QSet<QString> m_unavailable; // stream URLs that failed this session
 
     QIcon m_placeholder;
     QHash<QString, QIcon> m_logos;
