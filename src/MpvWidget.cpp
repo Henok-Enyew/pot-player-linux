@@ -61,6 +61,7 @@ QVariant nodeToVariant(const mpv_node *node)
 // Player state mirrored by widgets through propertyUpdated() only.
 constexpr const char *kStateProperties[] = {
     "time-pos", "duration", "playlist", "chapter-list", "path", "idle-active", "playlist-pos", "metadata",
+    "shuffle", "loop-file", "loop-playlist", "video-unscaled", "video-aspect-override",
 };
 
 // Properties whose changes are also forwarded through propertyChanged().
@@ -201,6 +202,22 @@ void MpvWidget::loadPlaylist(const QString &path)
     command(cmd);
 }
 
+void MpvWidget::loadTitledFiles(const QStringList &files, const QStringList &titles)
+{
+    if (files.isEmpty())
+        return;
+    // One temporary playlist carries the titles, as the original file did.
+    const QString list = writeBatch(files, titles);
+    if (list.isEmpty()) {
+        loadFiles(files);
+        return;
+    }
+    m_pendingSubtitles.clear();
+    if (!m_renderCtx)
+        m_pendingLoads.clear();
+    runOrDefer({{QStringLiteral("loadlist"), list, QStringLiteral("replace")}});
+}
+
 void MpvWidget::restorePlaylist(const QStringList &files, int current, double resumeAt)
 {
     if (files.isEmpty())
@@ -294,7 +311,7 @@ QList<QStringList> MpvWidget::queueCommands(const QStringList &files, const QStr
     return commands;
 }
 
-QString MpvWidget::writeBatch(const QStringList &files)
+QString MpvWidget::writeBatch(const QStringList &files, const QStringList &titles)
 {
     if (!m_batchDir)
         m_batchDir = std::make_unique<QTemporaryDir>(QDir::tempPath() + QStringLiteral("/top-player-XXXXXX"));
@@ -302,7 +319,14 @@ QString MpvWidget::writeBatch(const QStringList &files)
         return {};
     const QString path = m_batchDir->filePath(QStringLiteral("queue-%1.m3u8").arg(m_nextBatch++));
     QByteArray data("#EXTM3U\n");
-    for (const QString &file : files) {
+    for (qsizetype i = 0; i < files.size(); ++i) {
+        const QString &file = files[i];
+        QString title = titles.value(i);
+        if (!title.isEmpty()) {
+            // A line break would end the #EXTINF line early.
+            title.replace(QLatin1Char('\n'), QLatin1Char(' ')).remove(QLatin1Char('\r'));
+            data += "#EXTINF:-1," + title.toUtf8() + '\n';
+        }
         // Relative entries would be resolved against the playlist's folder.
         const bool url = file.contains(QLatin1String("://"));
         data += (url || QDir::isAbsolutePath(file) ? file : QFileInfo(file).absoluteFilePath()).toUtf8();

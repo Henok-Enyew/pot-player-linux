@@ -163,6 +163,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_mpv, &MpvWidget::fileFailed, this, &MainWindow::onFileFailed);
     connect(m_controlBar, &ControlBar::fullScreenRequested, this, &MainWindow::toggleFullScreen);
     connect(m_controlBar, &ControlBar::playlistToggled, this, &MainWindow::setPlaylistVisible);
+    connect(m_controlBar, &ControlBar::message, m_osd,
+            [this](const QString &label, const QString &value) { m_osd->showValue(label, value); });
 
     setupPlaylist();
     setupThumbnails();
@@ -275,15 +277,8 @@ void MainWindow::openFileDialog()
 void MainWindow::openFolderDialog()
 {
     const QString folder = QFileDialog::getExistingDirectory(this, tr("Open Folder"));
-    if (folder.isEmpty())
-        return;
-    m_osd->showValue(tr("Scanning Folder"), QFileInfo(folder).fileName());
-    MediaFiles::expandFoldersAsync({folder}, this, [this, folder](const QStringList &files) {
-        if (files.isEmpty())
-            m_osd->showValue(tr("No media files in"), QFileInfo(folder).fileName());
-        else
-            openFiles(files);
-    });
+    if (!folder.isEmpty())
+        m_playlist->openFolder(folder);
 }
 
 void MainWindow::openUrlDialog()
@@ -318,9 +313,7 @@ void MainWindow::openUrlDialog()
 
 void MainWindow::openPlaylistDialog()
 {
-    const QString file = QFileDialog::getOpenFileName(this, tr("Open Playlist"), {}, MediaFiles::playlistFileFilter());
-    if (!file.isEmpty())
-        m_mpv->loadPlaylist(file);
+    m_playlist->openPlaylistDialog();
 }
 
 void MainWindow::savePlaylistDialog()
@@ -433,12 +426,10 @@ bool MainWindow::isPlaylistVisible() const
 
 void MainWindow::setPlaylistVisible(bool visible)
 {
-    if (isFullScreen()) {
-        m_playlistBeforeFullScreen = visible;
-        m_controlBar->setPlaylistChecked(visible);
-        return;
-    }
+    // The drawer sits beside the video in the layout, in fullscreen too.
     m_drawer->setExpanded(visible);
+    if (visible)
+        m_drawer->raise();
 }
 
 void MainWindow::loadSubtitle(const QString &path)
@@ -745,14 +736,12 @@ void MainWindow::updateChrome()
 
     m_titleBar->setVisible(!fullScreen);
     m_controlBar->setVisible(!fullScreen);
+    // The playlist drawer stays as it is: only the user opens or closes it.
     if (fullScreen) {
-        m_playlistBeforeFullScreen = m_drawer->isExpanded();
-        m_drawer->setExpanded(false, false);
         m_idleTimer.start();
     } else {
         m_idleTimer.stop();
         m_mpv->unsetCursor();
-        m_drawer->setExpanded(m_playlistBeforeFullScreen, false);
     }
 }
 

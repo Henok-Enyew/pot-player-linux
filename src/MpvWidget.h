@@ -30,6 +30,9 @@ public:
     void playFiles(const QStringList &files, int start);
     // Replaces the playlist with the entries of a playlist file (.m3u, .pls, ...).
     void loadPlaylist(const QString &path);
+    // Replaces the playlist with `files`, titled with `titles` (same order;
+    // empty ones keep mpv's own title), and plays the first.
+    void loadTitledFiles(const QStringList &files, const QStringList &titles);
     // Replaces the playlist with `files` without starting playback; Play
     // starts at entry `current`. With `resumeAt` >= 0, entry `current` is
     // opened paused at `resumeAt` seconds instead.
@@ -139,7 +142,7 @@ private:
     QList<QStringList> queueCommands(const QStringList &files, const QString &flag);
     // Writes `files` to a new temporary M3U playlist; returns its path, or an
     // empty string on failure. It is deleted once mpv has read it.
-    QString writeBatch(const QStringList &files);
+    QString writeBatch(const QStringList &files, const QStringList &titles = {});
     // Sends queued commands while fewer than kMaxPendingReplies are unanswered.
     void sendQueuedCommands();
 

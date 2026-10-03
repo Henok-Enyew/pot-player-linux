@@ -50,5 +50,17 @@ bool writeM3u(const QString &path, const QList<Entry> &entries, QString *error =
 // local files (relative ones resolved against the playlist's folder) and URLs
 // as they are. Empty if the file can't be read.
 QStringList readPlaylist(const QString &path);
+// Like readPlaylist(), with each entry's title from its #EXTINF line (or a
+// .pls TitleN= line); titles are empty where the file gives none.
+QList<Entry> readPlaylistEntries(const QString &path);
+
+// A playlist file read for playing: the entries that can be played, with
+// local files that no longer exist left out.
+struct PlaylistContents {
+    QList<Entry> entries;
+    int missing = 0;     // local files left out
+    bool readable = true; // false if the file couldn't be read
+};
+PlaylistContents loadPlaylist(const QString &path);
 
 } // namespace PlaylistOps

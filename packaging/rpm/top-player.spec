@@ -1,10 +1,10 @@
 # Built in CI by .github/workflows/release.yml, which replaces Version with
 # the release tag. Local build from a checkout:
 #
-#   git archive --prefix=top-player-1.0.0/ -o ~/rpmbuild/SOURCES/top-player-1.0.0.tar.gz HEAD
+#   git archive --prefix=top-player-1.0.1/ -o ~/rpmbuild/SOURCES/top-player-1.0.1.tar.gz HEAD
 #   rpmbuild -ba packaging/rpm/top-player.spec
 Name:           top-player
-Version:        1.0.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        High-performance, lightweight native media player
 
@@ -61,6 +61,14 @@ appstreamcli validate --no-net %{buildroot}%{_metainfodir}/org.github.topplayer.
 %{_datadir}/icons/hicolor/scalable/apps/org.github.topplayer.svg
 
 %changelog
+* Sat Oct 03 2026 Henok Enyew Andargie - 1.0.1-1
+- Live TV plays channels that need a referrer or user agent, and tries a
+  channel's other streams when one fails
+- Every country, All Countries, a category filter and Hide geo-blocked
+- The playlist opens in fullscreen too
+- Shuffle, repeat (all / one) and aspect (fit / 16:9 / 100%) buttons
+- Opening a playlist keeps its titles, skips missing files and says so
+
 * Sat Oct 03 2026 Henok Enyew Andargie - 1.0.0-1
 - Renamed to Top Player, new icon and cyan skin
 - About dialog, click to pause, double-click for fullscreen

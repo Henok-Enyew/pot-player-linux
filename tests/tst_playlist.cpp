@@ -91,6 +91,10 @@ private Q_SLOTS:
     void filteredMove();
     void removeMissingAndDuplicates();
     void saveAndOpenPlaylist();
+    void readPlaylistEntries();
+    void openPlaylistKeepsTitlesAndSkipsMissing();
+    void openPlaylistFeedback();
+    void folderFeedback();
     void savePlaylistDialogAddsSuffix();
     void sessionRestore();
     void sessionDisabled();
@@ -455,6 +459,133 @@ void PlaylistTest::saveAndOpenPlaylist()
     QTRY_COMPARE(mpvFiles(), QStringList());
     m_mpv->loadPlaylist(path);
     QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), m_expected, 10000);
+}
+
+void PlaylistTest::readPlaylistEntries()
+{
+    const QString m3u = m_dir.filePath(QStringLiteral("titled.m3u"));
+    QFile file(m3u);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("#EXTM3U\n"
+               "# a comment\n"
+               "#EXTINF:2,The First, with a comma\n"
+               "show/episode 1.mkv\n"
+               "\n"
+               "#EXTVLCOPT:network-caching=1000\n"
+               "https://radio.example/live.mp3\n"
+               "#EXTINF:-1,Stream\n"
+               "file://" + m_expected[1].toUtf8().replace(" ", "%20") + "\n");
+    file.close();
+    const QList<PlaylistOps::Entry> entries = PlaylistOps::readPlaylistEntries(m3u);
+    QCOMPARE(entries.size(), 3);
+    QCOMPARE(entries[0].filename, m_expected[0]); // relative to the playlist
+    QCOMPARE(entries[0].title, QStringLiteral("The First, with a comma"));
+    QCOMPARE(entries[1].filename, QStringLiteral("https://radio.example/live.mp3"));
+    QVERIFY(entries[1].title.isEmpty()); // titles belong to the next entry only
+    QCOMPARE(entries[2].filename, m_expected[1]);
+    QCOMPARE(entries[2].title, QStringLiteral("Stream"));
+
+    const QString pls = m_dir.filePath(QStringLiteral("titled.pls"));
+    QFile plsFile(pls);
+    QVERIFY(plsFile.open(QIODevice::WriteOnly));
+    plsFile.write("[playlist]\nFile2=https://b.example/2\nTitle2=Second\nFile1=show/track.wav\nNumberOfEntries=2\n");
+    plsFile.close();
+    const QList<PlaylistOps::Entry> plsEntries = PlaylistOps::readPlaylistEntries(pls);
+    QCOMPARE(plsEntries.size(), 2);
+    QCOMPARE(plsEntries[0].filename, m_expected[3]);
+    QCOMPARE(plsEntries[1].title, QStringLiteral("Second"));
+    QCOMPARE(PlaylistOps::readPlaylist(pls), QStringList({m_expected[3], QStringLiteral("https://b.example/2")}));
+}
+
+void PlaylistTest::openPlaylistKeepsTitlesAndSkipsMissing()
+{
+    const QString path = m_dir.filePath(QStringLiteral("mixed.m3u8"));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("#EXTM3U\n"
+               "#EXTINF:2,Pilot\n" + m_expected[0].toUtf8() + "\n"
+               "#EXTINF:3,Gone\n" + m_dir.filePath(QStringLiteral("moved away.mkv")).toUtf8() + "\n"
+               "#EXTINF:3,Second\n" + m_expected[1].toUtf8() + "\n");
+    file.close();
+
+    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
+    QSignalSpy messages(m_window->playlist(), &PlaylistController::message);
+    // Through the menu's dialog, like a user.
+    whenDialogOpens<QFileDialog>([&](QFileDialog *dialog) {
+        QVERIFY(dialog->acceptMode() == QFileDialog::AcceptOpen);
+        dialog->selectFile(path);
+        static_cast<QDialog *>(dialog)->accept();
+    });
+    m_window->openPlaylistDialog();
+    QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), QStringList({m_expected[0], m_expected[1]}), 10000);
+    const QVariantList playlist = prop("playlist").toList();
+    QCOMPARE(playlist[0].toMap().value(QStringLiteral("title")).toString(), QStringLiteral("Pilot"));
+    QCOMPARE(playlist[1].toMap().value(QStringLiteral("title")).toString(), QStringLiteral("Second"));
+    QTRY_VERIFY(m_view->count() == 2 && m_view->item(1)->text().contains(QLatin1String("Second")));
+    QVERIFY(!messages.isEmpty());
+    QCOMPARE(messages.last().at(0).toString(), QStringLiteral("Opened Playlist"));
+    QCOMPARE(messages.last().at(1).toString(), QStringLiteral("2 items from mixed.m3u8 · 1 missing skipped"));
+    // The temporary copy given to mpv is cleaned up.
+    QTRY_VERIFY(QDir(QDir::tempPath()).entryList({QStringLiteral("top-player-*")}, QDir::Dirs).isEmpty()
+                || QDir(QDir::tempPath() + QLatin1Char('/') + QDir(QDir::tempPath()).entryList({QStringLiteral("top-player-*")}, QDir::Dirs).first())
+                       .entryList({QStringLiteral("*.m3u8")}).isEmpty());
+}
+
+void PlaylistTest::openPlaylistFeedback()
+{
+    load({m_expected[2]});
+    QSignalSpy messages(m_window->playlist(), &PlaylistController::message);
+    const auto lastMessage = [&messages] {
+        return messages.isEmpty() ? QString() : messages.last().at(0).toString() + QLatin1Char('|') + messages.last().at(1).toString();
+    };
+
+    const QString empty = m_dir.filePath(QStringLiteral("empty.m3u"));
+    QFile file(empty);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("#EXTM3U\n# nothing here\n");
+    file.close();
+    m_window->playlist()->openPlaylist(empty);
+    QTRY_COMPARE(lastMessage(), QStringLiteral("Playlist is empty|empty.m3u"));
+
+    const QString gone = m_dir.filePath(QStringLiteral("gone.m3u"));
+    QFile goneFile(gone);
+    QVERIFY(goneFile.open(QIODevice::WriteOnly));
+    goneFile.write("/nonexistent/a.mkv\n/nonexistent/b.mkv\n");
+    goneFile.close();
+    m_window->playlist()->openPlaylist(gone);
+    QTRY_COMPARE(lastMessage(), QStringLiteral("Playlist files not found|gone.m3u"));
+
+    m_window->playlist()->openPlaylist(m_dir.filePath(QStringLiteral("no such list.m3u")));
+    QTRY_COMPARE(lastMessage(), QStringLiteral("Could not open playlist|no such list.m3u"));
+
+    // None of these touched the playlist.
+    QCOMPARE(mpvFiles(), QStringList{m_expected[2]});
+}
+
+void PlaylistTest::folderFeedback()
+{
+    m_mpv->setMpvProperty(QStringLiteral("pause"), QStringLiteral("yes"));
+    QSignalSpy messages(m_window->playlist(), &PlaylistController::message);
+    const auto lastMessage = [&messages] {
+        return messages.isEmpty() ? QString() : messages.last().at(0).toString() + QLatin1Char('|') + messages.last().at(1).toString();
+    };
+    m_window->playlist()->openFolder(m_show);
+    QTRY_COMPARE_WITH_TIMEOUT(mpvFiles(), m_expected, 10000);
+    QTRY_COMPARE(lastMessage(), QStringLiteral("Opened Folder|5 items from show"));
+    m_window->playlist()->addFolder(m_show + QStringLiteral("/Extras/"));
+    QTRY_COMPARE(mpvFiles().size(), 6);
+    QTRY_COMPARE(lastMessage(), QStringLiteral("Added to Playlist|Added 1 item from Extras"));
+    const QString empty = m_dir.filePath(QStringLiteral("empty-folder"));
+    QVERIFY(QDir().mkpath(empty));
+    m_window->playlist()->addFolder(empty);
+    QTRY_COMPARE(lastMessage(), QStringLiteral("No media files in|empty-folder"));
+    // A folder that is gone isn't queued as a file.
+    m_window->playlist()->addFolder(m_dir.filePath(QStringLiteral("gone-folder")));
+    QTRY_COMPARE(lastMessage(), QStringLiteral("Folder not found|gone-folder"));
+    m_window->playlist()->openFolder(m_dir.filePath(QStringLiteral("gone-folder")));
+    QTRY_COMPARE(lastMessage(), QStringLiteral("Folder not found|gone-folder"));
+    QTest::qWait(200);
+    QCOMPARE(mpvFiles().size(), 6);
 }
 
 void PlaylistTest::savePlaylistDialogAddsSuffix()

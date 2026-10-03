@@ -157,7 +157,6 @@ private:
     bool m_maximizedBeforeFullScreen = false;
     int m_hoverSecond = -1;
     QPoint m_popupAnchor;
-    bool m_playlistBeforeFullScreen = false;
     bool m_wasFullScreen = false;
     double m_clipIn = -1;
     double m_clipOut = -1;

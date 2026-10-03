@@ -2,8 +2,10 @@
 // the result on mpv's properties. Needs a display (run under xvfb-run) and
 // ffmpeg, which generates the test clip.
 
+#include "ControlBar.h"
 #include "Icons.h"
 #include "MainWindow.h"
+#include "PlaylistDrawer.h"
 #include "MpvWidget.h"
 #include "SeekBar.h"
 #include "ThumbnailGenerator.h"
@@ -11,6 +13,7 @@
 
 #include <QApplication>
 #include <QDialog>
+#include <QFile>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
@@ -54,6 +57,11 @@ private Q_SLOTS:
     void playlistKeepsArrowKeys();
     void clickTogglesPause();
     void doubleClickTogglesFullScreen();
+    void playlistInFullScreen();
+    void shuffleButton();
+    void repeatButton();
+    void aspectButton();
+    void modeButtonsFollowMenu();
     void aboutDialog();
     void thumbnailsOnlyOnHover();
 
@@ -391,6 +399,163 @@ void TransportTest::doubleClickTogglesFullScreen()
     QTRY_COMPARE(m_window->geometry(), normalGeometry);
 }
 
+void TransportTest::playlistInFullScreen()
+{
+    auto *drawer = m_window->findChild<PlaylistDrawer *>();
+    auto *button = m_window->findChild<QToolButton *>(QStringLiteral("PlaylistButton"));
+    QVERIFY(drawer && button);
+    QVERIFY(!drawer->isExpanded());
+
+    m_window->toggleFullScreen();
+    QTRY_VERIFY(m_window->isFullScreen());
+    // F6 opens the drawer in fullscreen, beside the video.
+    press(Qt::Key_F6);
+    QVERIFY(drawer->isExpanded());
+    QTRY_VERIFY(drawer->isVisible() && drawer->width() > 100);
+    QVERIFY(m_window->rect().contains(drawer->mapTo(m_window, drawer->rect().center())));
+    QVERIFY(button->isChecked());
+    // And closes it again, with the button in step.
+    press(Qt::Key_F6);
+    QVERIFY(!drawer->isExpanded());
+    QVERIFY(!button->isChecked());
+    QTRY_VERIFY(!drawer->isVisible());
+
+    // The bottom bar's button works the same.
+    button->show(); // the bar hides itself in fullscreen until the mouse comes near
+    QTest::mouseClick(button, Qt::LeftButton);
+    QVERIFY(drawer->isExpanded());
+    QTRY_VERIFY(drawer->isVisible() && drawer->width() > 100);
+    QVERIFY(m_window->isPlaylistVisible());
+
+    // Leaving and entering fullscreen leaves an open drawer open.
+    m_window->toggleFullScreen();
+    QTRY_VERIFY(!m_window->isFullScreen());
+    QVERIFY(drawer->isExpanded());
+    QVERIFY(button->isChecked());
+    m_window->toggleFullScreen();
+    QTRY_VERIFY(m_window->isFullScreen());
+    QVERIFY(drawer->isExpanded());
+    QTRY_VERIFY(drawer->isVisible());
+    m_window->toggleFullScreen();
+    QTRY_VERIFY(!m_window->isFullScreen());
+}
+
+void TransportTest::shuffleButton()
+{
+    // Distinct entries, so that the order shows.
+    QStringList files;
+    for (int i = 0; i < 12; ++i) {
+        const QString link = m_dir.filePath(QStringLiteral("clip-%1.mkv").arg(i));
+        QVERIFY(QFile::exists(link) || QFile::link(m_clip, link));
+        files.append(link);
+    }
+    m_window->openFiles(files);
+    const auto order = [this] {
+        QStringList result;
+        for (const QVariant &entry : prop("playlist").toList())
+            result.append(entry.toMap().value(QStringLiteral("filename")).toString());
+        return result;
+    };
+    QTRY_COMPARE_WITH_TIMEOUT(order(), files, 10000);
+
+    auto *button = m_window->findChild<QToolButton *>(QStringLiteral("ShuffleButton"));
+    QVERIFY(button);
+    // Opening files fits the window to the (small) clip; the mode buttons need room.
+    m_window->resize(800, 450);
+    QTRY_VERIFY(button->isVisible());
+    QVERIFY(!button->isChecked());
+    click("ShuffleButton");
+    QTRY_VERIFY(prop("shuffle").toBool());
+    QTRY_VERIFY(button->isChecked());
+    QTRY_VERIFY(order() != files);
+    QCOMPARE(prop("playlist-count").toInt(), files.size());
+    // The accent-colored icon marks it on.
+    const QImage on = button->icon().pixmap(QSize(20, 20), QIcon::Normal, QIcon::On).toImage();
+    bool accent = false;
+    for (int y = 0; y < on.height() && !accent; ++y) {
+        for (int x = 0; x < on.width() && !accent; ++x)
+            accent = on.pixelColor(x, y) == QColor(0x00, 0xD2, 0xFF);
+    }
+    QVERIFY(accent);
+
+    // Off restores the order.
+    click("ShuffleButton");
+    QTRY_VERIFY(!prop("shuffle").toBool());
+    QTRY_COMPARE(order(), files);
+    QTRY_VERIFY(!button->isChecked());
+}
+
+void TransportTest::repeatButton()
+{
+    auto *button = m_window->findChild<QToolButton *>(QStringLiteral("RepeatButton"));
+    auto *bar = m_window->findChild<ControlBar *>();
+    QVERIFY(button && bar);
+    QCOMPARE(bar->repeat(), ControlBar::Repeat::Off);
+    QVERIFY(!button->isChecked());
+    const QImage loopIcon = iconImage(button->icon());
+
+    click("RepeatButton");
+    QTRY_COMPARE(bar->repeat(), ControlBar::Repeat::All);
+    QCOMPARE(prop("loop-playlist").toString(), QStringLiteral("inf"));
+    QVERIFY(!prop("loop-file").toBool());
+    QVERIFY(button->isChecked());
+    QCOMPARE(button->toolTip(), QStringLiteral("Repeat: All"));
+
+    click("RepeatButton");
+    QTRY_COMPARE(bar->repeat(), ControlBar::Repeat::One);
+    QCOMPARE(prop("loop-file").toString(), QStringLiteral("inf"));
+    QVERIFY(!prop("loop-playlist").toBool());
+    QVERIFY(button->isChecked());
+    QVERIFY(iconImage(button->icon()) != loopIcon); // shows the "1"
+
+    click("RepeatButton");
+    QTRY_COMPARE(bar->repeat(), ControlBar::Repeat::Off);
+    QVERIFY(!prop("loop-file").toBool());
+    QVERIFY(!prop("loop-playlist").toBool());
+    QVERIFY(!button->isChecked());
+    QCOMPARE(iconImage(button->icon()), loopIcon);
+}
+
+void TransportTest::aspectButton()
+{
+    auto *bar = m_window->findChild<ControlBar *>();
+    QCOMPARE(bar->aspect(), ControlBar::Aspect::Fit);
+    click("AspectButton");
+    QTRY_COMPARE(bar->aspect(), ControlBar::Aspect::Wide);
+    QVERIFY(std::abs(prop("video-aspect-override").toDouble() - 16.0 / 9.0) < 0.01);
+    QTRY_VERIFY(std::abs(prop("video-params/aspect").toDouble() - 16.0 / 9.0) < 0.01);
+    click("AspectButton");
+    QTRY_COMPARE(bar->aspect(), ControlBar::Aspect::Original);
+    QVERIFY(prop("video-unscaled").toBool());
+    QCOMPARE(prop("video-aspect-override").toDouble(), -1.0);
+    click("AspectButton");
+    QTRY_COMPARE(bar->aspect(), ControlBar::Aspect::Fit);
+    QVERIFY(!prop("video-unscaled").toBool());
+    QCOMPARE(prop("video-aspect-override").toDouble(), -1.0);
+}
+
+void TransportTest::modeButtonsFollowMenu()
+{
+    // Changes made elsewhere (the menu's Loop File, its Aspect Ratio) show on the buttons.
+    auto *bar = m_window->findChild<ControlBar *>();
+    press(Qt::Key_L, Qt::ControlModifier | Qt::ShiftModifier); // Loop File
+    QTRY_COMPARE(bar->repeat(), ControlBar::Repeat::One);
+    QTRY_VERIFY(m_window->findChild<QToolButton *>(QStringLiteral("RepeatButton"))->isChecked());
+    set("video-aspect-override", QStringLiteral("16:9"));
+    QTRY_COMPARE(bar->aspect(), ControlBar::Aspect::Wide);
+    set("video-aspect-override", QStringLiteral("4:3"));
+    QTRY_COMPARE(bar->aspect(), ControlBar::Aspect::Fit);
+
+    // Narrow windows drop the mode buttons, not the essentials.
+    m_window->resize(m_window->minimumWidth(), m_window->height());
+    QTRY_VERIFY(!m_window->findChild<QToolButton *>(QStringLiteral("ShuffleButton"))->isVisible());
+    QVERIFY(m_window->findChild<QToolButton *>(QStringLiteral("PlaylistButton"))->isVisible());
+    QVERIFY(m_window->findChild<QToolButton *>(QStringLiteral("FullScreenButton"))->isVisible());
+    QCOMPARE(m_window->width(), m_window->minimumWidth());
+    m_window->resize(800, 450);
+    QTRY_VERIFY(m_window->findChild<QToolButton *>(QStringLiteral("ShuffleButton"))->isVisible());
+}
+
 void TransportTest::aboutDialog()
 {
     press(Qt::Key_F1);
@@ -401,6 +566,8 @@ void TransportTest::aboutDialog()
     auto *title = about->findChild<QLabel *>(QStringLiteral("AboutTitle"));
     QVERIFY(title);
     QCOMPARE(title->accessibleName(), QStringLiteral("Top Player — Version " APP_VERSION));
+    QCOMPARE(QStringLiteral(APP_VERSION), QStringLiteral("1.0.1"));
+    QVERIFY(title->text().contains(QLatin1String("Version 1.0.1")));
     auto *links = about->findChild<QLabel *>(QStringLiteral("AboutLinks"));
     QVERIFY(links);
     QVERIFY(links->openExternalLinks());
