@@ -92,6 +92,7 @@ SeekBar {
     qproperty-hoverColor: rgba(255, 255, 255, 50);
     qproperty-handleColor: #f0f0f0;
     qproperty-chapterColor: #202020;
+    qproperty-clipColor: #3fc1ff;
     min-height: 18px;
 }
 

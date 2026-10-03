@@ -60,6 +60,20 @@ public:
     // Opens the OpenSubtitles search for the playing file.
     void openSubtitleDownloadDialog();
     void openSubtitleSettingsDialog();
+    // Download from URL... (yt-dlp).
+    void openMediaDownloaderDialog();
+
+    // The cutter's In (A) and Out (B) points: set to the playback position,
+    // shown on the seekbar, and cleared when another file opens. -1 if unset.
+    void setClipIn();
+    void setClipOut();
+    void clearClipRange();
+    double clipIn() const { return m_clipIn; }
+    double clipOut() const { return m_clipOut; }
+    // Tools -> Cut / Extract Media...
+    void openMediaCutterDialog();
+    // Opens the file manager at `path`, selecting it where supported.
+    static void showInFileManager(const QString &path);
     void toggleFullScreen();
     void setAlwaysOnTop(bool onTop);
     // Resizes the window so the video shows at `scale` times its display size.
@@ -86,6 +100,8 @@ private:
     void onStateUpdated(const QString &name, const QVariant &value);
     void showPropertyOsd(const QString &name, const QVariant &value);
     void showSeekOsd();
+    void updateClipRange();
+    void onClipExported(const QString &path);
     // Resizes the window so the video area is `scale` times `videoSize`, shrunk
     // to fit the screen, keeping the window centered. Returns false if skipped.
     bool resizeToVideo(const QSize &videoSize, qreal scale);
@@ -118,4 +134,6 @@ private:
     QPoint m_popupAnchor;
     bool m_playlistBeforeFullScreen = false;
     bool m_wasFullScreen = false;
+    double m_clipIn = -1;
+    double m_clipOut = -1;
 };

@@ -219,6 +219,31 @@ when the server can't be reached.
   **Settings...** button in the dialog). Release builds may include a
   default key; yours takes precedence.
 
+### Tools
+
+- **Cut / Extract Media** (`Ctrl+X`, or **Tools > Cut / Extract Media...**):
+  mark the range while playing with `Ctrl+[` (In-point A) and `Ctrl+]`
+  (Out-point B); cyan brackets show it on the seekbar. The dialog takes the
+  range (editable as `HH:MM:SS.zzz`, with **Use Current Time** buttons) and
+  writes it with `ffmpeg`, either as a **lossless stream copy** (instant; the
+  picture starts at the first keyframe in the range) or as **audio only**
+  (MP3, AAC or FLAC). The clip is saved as `<title>_clip.<ext>` next to the
+  file by default. A progress dialog follows ffmpeg and can cancel it; when
+  done, **Open in Player** or **Show in File Manager**. Needs `ffmpeg`
+  (`sudo dnf install ffmpeg` from RPM Fusion, or `sudo apt install ffmpeg`).
+- **Download from URL** (`Ctrl+Shift+D`): downloads from YouTube, TikTok,
+  Instagram, X, Vimeo and the other sites
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports. A link on the
+  clipboard is filled in. Pick **Best Video + Audio**, **4K**, **1080p**,
+  **720p** or **Audio Only (.mp3)** and a folder (`~/Videos` by default);
+  progress, speed and ETA show while it runs, and the file can play as soon
+  as it is done. **Direct Stream** plays the link in mpv without saving it.
+  Needs `yt-dlp` (`sudo dnf install yt-dlp`, `sudo apt install yt-dlp` or
+  `pip install --user yt-dlp`).
+
+The Flatpak can't run the host's `ffmpeg` or `yt-dlp`, so these two tools
+are only available in the AppImage, RPM and source builds.
+
 | Input | Action |
 | --- | --- |
 | `Space` | Play / pause (after Stop, plays the playlist again) |
@@ -241,6 +266,9 @@ when the server can't be reached.
 | `Alt+Up` / `Alt+Down` | Move subtitles up / down |
 | `Alt+PgUp` / `Alt+PgDn` | Subtitle size |
 | `Ctrl+D` | Deinterlace |
+| `Ctrl+[` / `Ctrl+]` | Set cut In-point (A) / Out-point (B) |
+| `Ctrl+X` | Cut / extract media |
+| `Ctrl+Shift+D` | Download from URL |
 | `Ctrl+E` | Screenshot (saved to `~/Pictures`) |
 | `Ctrl+O` | Open files |
 | `PgUp` / `PgDn` | Previous / next file in the playlist |

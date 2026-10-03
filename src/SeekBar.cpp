@@ -42,6 +42,13 @@ void SeekBar::setChapters(const QList<double> &times)
     update();
 }
 
+void SeekBar::setClipRange(double in, double out)
+{
+    m_clipIn = in;
+    m_clipOut = out;
+    update();
+}
+
 QSize SeekBar::sizeHint() const
 {
     return {200, 18};
@@ -98,6 +105,33 @@ void SeekBar::paintEvent(QPaintEvent *)
     for (double chapter : std::as_const(m_chapters)) {
         if (chapter > 0 && chapter < m_duration)
             p.drawRect(QRectF(xFor(chapter) - 1, groove.top(), 2, groove.height()));
+    }
+
+    // The cutter's range: a band over the groove between brackets at A and B.
+    const bool hasIn = m_clipIn >= 0;
+    const bool hasOut = m_clipOut >= 0;
+    if (hasIn || hasOut) {
+        const qreal inX = hasIn ? xFor(m_clipIn) : groove.left();
+        const qreal outX = hasOut ? xFor(m_clipOut) : groove.right();
+        QColor band = m_clipColor;
+        band.setAlpha(170);
+        p.setBrush(band);
+        if (outX > inX)
+            p.drawRect(QRectF(QPointF(inX, groove.top()), QPointF(outX, groove.bottom())));
+        const qreal top = std::max(0.0, groove.center().y() - 7);
+        const qreal bottom = std::min<qreal>(height(), groove.center().y() + 7);
+        p.setBrush(m_clipColor);
+        auto bracket = [&](qreal x, qreal direction) {
+            // A 2 px post with feet pointing into the range: "[" or "]".
+            p.drawRect(QRectF(x - 1, top, 2, bottom - top));
+            const qreal footX = direction > 0 ? x : x - 4;
+            p.drawRect(QRectF(footX, top, 4, 2));
+            p.drawRect(QRectF(footX, bottom - 2, 4, 2));
+        };
+        if (hasIn)
+            bracket(inX, 1);
+        if (hasOut)
+            bracket(outX, -1);
     }
 
     if (m_hovering || m_dragging) {

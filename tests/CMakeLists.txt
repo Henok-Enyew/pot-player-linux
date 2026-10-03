@@ -31,3 +31,7 @@ add_test(NAME tst_livestreams COMMAND tst_livestreams)
 add_executable(tst_equalizer tst_equalizer.cpp)
 target_link_libraries(tst_equalizer PRIVATE pot-player-core Qt6::Test)
 add_test(NAME tst_equalizer COMMAND tst_equalizer)
+
+add_executable(tst_tools tst_tools.cpp)
+target_link_libraries(tst_tools PRIVATE pot-player-core Qt6::Test)
+add_test(NAME tst_tools COMMAND tst_tools)

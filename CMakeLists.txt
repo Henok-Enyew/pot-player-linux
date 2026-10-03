@@ -59,6 +59,14 @@ add_library(pot-player-core OBJECT
     src/LiveStreamDialog.h
     src/MainWindow.cpp
     src/MainWindow.h
+    src/MediaCutter.cpp
+    src/MediaCutter.h
+    src/MediaCutterDialog.cpp
+    src/MediaCutterDialog.h
+    src/MediaDownloader.cpp
+    src/MediaDownloader.h
+    src/MediaDownloaderDialog.cpp
+    src/MediaDownloaderDialog.h
     src/MediaFiles.cpp
     src/MediaFiles.h
     src/MediaLibrary.cpp

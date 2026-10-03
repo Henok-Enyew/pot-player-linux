@@ -5,6 +5,8 @@
 #include "ControlBar.h"
 #include "EmptyStateWidget.h"
 #include "LiveStreamDialog.h"
+#include "MediaCutterDialog.h"
+#include "MediaDownloaderDialog.h"
 #include "MediaFiles.h"
 #include "MpvWidget.h"
 #include "OsdWidget.h"
@@ -22,6 +24,11 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QContextMenuEvent>
+#include <QDesktopServices>
+#include <QMessageBox>
+#include <QPointer>
+#include <QPushButton>
+#include <QProcess>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
@@ -240,6 +247,9 @@ void MainWindow::onStateUpdated(const QString &name, const QVariant &value)
         // Previews come from a second decoder, so only local files are worth it.
         const QString path = value.toString();
         m_thumbnails->setFile(QFileInfo(path).isFile() ? path : QString());
+        // In/Out points belong to the file they were set in.
+        if (m_clipIn >= 0 || m_clipOut >= 0)
+            clearClipRange();
     }
 }
 
@@ -430,6 +440,143 @@ void MainWindow::openSubtitleSettingsDialog()
 {
     SubtitleSettingsDialog dialog(this);
     dialog.exec();
+}
+
+void MainWindow::openMediaDownloaderDialog()
+{
+    auto *dialog = new MediaDownloaderDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &MediaDownloaderDialog::downloaded, this, [this](const QString &path, bool play) {
+        if (play)
+            openFile(path);
+        else
+            m_mpv->insertFiles({path});
+        m_osd->showValue(tr("Downloaded:"), QFileInfo(path).fileName());
+    });
+    connect(dialog, &MediaDownloaderDialog::streamRequested, this, [this](const QString &url, const QString &format) {
+        // mpv resolves the page through yt-dlp, picking streams with this format.
+        m_mpv->setMpvProperty(QStringLiteral("ytdl-format"), format);
+        openFile(url);
+        m_osd->showValue(tr("Streaming"), url);
+    });
+    dialog->open();
+}
+
+void MainWindow::setClipIn()
+{
+    if (m_mpv->isIdle()) {
+        m_osd->showValue(tr("Nothing is playing"));
+        return;
+    }
+    const double position = m_mpv->mpvProperty(QStringLiteral("time-pos")).toDouble();
+    m_clipIn = std::max(0.0, position);
+    // An Out-point before the new In-point no longer makes a range.
+    if (m_clipOut >= 0 && m_clipOut <= m_clipIn)
+        m_clipOut = -1;
+    updateClipRange();
+    m_osd->showValue(tr("In-Point (A)"), MediaCutter::formatTimestamp(m_clipIn));
+}
+
+void MainWindow::setClipOut()
+{
+    if (m_mpv->isIdle()) {
+        m_osd->showValue(tr("Nothing is playing"));
+        return;
+    }
+    const double position = m_mpv->mpvProperty(QStringLiteral("time-pos")).toDouble();
+    m_clipOut = std::max(0.0, position);
+    if (m_clipIn >= 0 && m_clipIn >= m_clipOut)
+        m_clipIn = -1;
+    updateClipRange();
+    m_osd->showValue(tr("Out-Point (B)"), MediaCutter::formatTimestamp(m_clipOut));
+}
+
+void MainWindow::clearClipRange()
+{
+    const bool hadRange = m_clipIn >= 0 || m_clipOut >= 0;
+    m_clipIn = -1;
+    m_clipOut = -1;
+    updateClipRange();
+    if (hadRange && !m_mpv->isIdle())
+        m_osd->showValue(tr("In/Out Points Cleared"));
+}
+
+void MainWindow::updateClipRange()
+{
+    m_controlBar->seekBar()->setClipRange(m_clipIn, m_clipOut);
+}
+
+void MainWindow::openMediaCutterDialog()
+{
+    const QString path = m_mpv->isIdle() ? QString() : MediaFiles::localPath(m_mpv->mpvPropertyString(QStringLiteral("path")));
+    if (path.isEmpty() || !QFileInfo(path).isFile()) {
+        m_osd->showValue(m_mpv->isIdle() ? tr("Open a file to cut") : tr("Only local files can be cut"));
+        return;
+    }
+    MediaCutterDialog::Setup setup;
+    setup.input = path;
+    setup.title = m_mpv->mpvPropertyString(QStringLiteral("media-title"));
+    setup.duration = m_mpv->mpvProperty(QStringLiteral("duration")).toDouble();
+    // Without both points, the range runs from the start or to the end.
+    setup.start = m_clipIn >= 0 ? m_clipIn : 0;
+    setup.end = m_clipOut >= 0 ? m_clipOut : setup.duration;
+    QPointer<MpvWidget> mpv = m_mpv;
+    setup.currentTime = [mpv] { return mpv ? mpv->mpvProperty(QStringLiteral("time-pos")).toDouble() : 0.0; };
+
+    auto *dialog = new MediaCutterDialog(setup, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &MediaCutterDialog::exported, this, &MainWindow::onClipExported);
+    dialog->open();
+}
+
+void MainWindow::onClipExported(const QString &path)
+{
+    m_osd->showValue(tr("Clip saved:"), QFileInfo(path).fileName());
+    auto *box = new QMessageBox(QMessageBox::Information, tr("Clip Saved"),
+                                tr("Saved %1").arg(QFileInfo(path).fileName()), QMessageBox::Close, this);
+    box->setObjectName(QStringLiteral("ClipSavedMessage"));
+    box->setInformativeText(QDir::toNativeSeparators(QFileInfo(path).absolutePath()));
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    QPushButton *open = box->addButton(tr("Open in Player"), QMessageBox::AcceptRole);
+    open->setObjectName(QStringLiteral("ClipOpenButton"));
+    QPushButton *show = box->addButton(tr("Show in File Manager"), QMessageBox::ActionRole);
+    show->setObjectName(QStringLiteral("ClipShowButton"));
+    connect(box, &QMessageBox::buttonClicked, this, [this, open, show, path](QAbstractButton *button) {
+        if (button == open)
+            openFile(path);
+        else if (button == show)
+            showInFileManager(path);
+    });
+    box->open();
+}
+
+void MainWindow::showInFileManager(const QString &path)
+{
+    const QUrl folder = QUrl::fromLocalFile(QFileInfo(path).absolutePath());
+    // The freedesktop FileManager1 interface opens the folder with the file
+    // selected (Nautilus, Dolphin, Nemo, Thunar, ...); else just open the folder.
+    const QString dbusSend = QStandardPaths::findExecutable(QStringLiteral("dbus-send"));
+    if (dbusSend.isEmpty()) {
+        QDesktopServices::openUrl(folder);
+        return;
+    }
+    auto *process = new QProcess;
+    QObject::connect(process, &QProcess::finished, process, [process, folder](int exitCode, QProcess::ExitStatus status) {
+        if (status != QProcess::NormalExit || exitCode != 0)
+            QDesktopServices::openUrl(folder);
+        process->deleteLater();
+    });
+    QObject::connect(process, &QProcess::errorOccurred, process, [process, folder](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) {
+            QDesktopServices::openUrl(folder);
+            process->deleteLater();
+        }
+    });
+    process->start(dbusSend, {QStringLiteral("--session"), QStringLiteral("--print-reply"),
+                              QStringLiteral("--dest=org.freedesktop.FileManager1"), QStringLiteral("--type=method_call"),
+                              QStringLiteral("/org/freedesktop/FileManager1"), QStringLiteral("org.freedesktop.FileManager1.ShowItems"),
+                              QStringLiteral("array:string:") + QUrl::fromLocalFile(path).toString(QUrl::FullyEncoded),
+                              QStringLiteral("string:")});
 }
 
 void MainWindow::toggleFullScreen()

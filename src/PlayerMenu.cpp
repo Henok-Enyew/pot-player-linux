@@ -49,6 +49,7 @@ PlayerMenu::PlayerMenu(MpvWidget *mpv, MainWindow *window)
     buildVideoMenu();
     buildAudioMenu();
     buildSubtitleMenu();
+    buildToolsMenu();
     addSeparator();
     buildWindowMenu();
 
@@ -208,6 +209,8 @@ void PlayerMenu::buildPlaybackMenu()
     addItem(this, tr("Open URL / Stream..."), [this] { m_window->openUrlDialog(); });
     addItem(this, tr("Live TV && Radio..."), [this] { m_window->openLiveStreamDialog(); },
             QKeySequence(Qt::CTRL | Qt::Key_L));
+    addItem(this, tr("Download from URL..."), [this] { m_window->openMediaDownloaderDialog(); },
+            QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D));
     addItem(this, tr("Open Playlist..."), [this] { m_window->openPlaylistDialog(); });
     addItem(this, tr("Save Playlist..."), [this] { m_window->savePlaylistDialog(); }, QKeySequence(Qt::CTRL | Qt::Key_S));
     addSeparator();
@@ -254,6 +257,20 @@ void PlayerMenu::buildPlaybackMenu()
                QKeySequence(Qt::Key_Z));
     addToggle(playback, tr("Loop File"), QStringLiteral("loop-file"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L), true,
               QStringLiteral("inf"), QStringLiteral("no"));
+}
+
+void PlayerMenu::buildToolsMenu()
+{
+    QMenu *tools = addMenu(tr("Tools"));
+    // [ and ] alone are the subtitle delay keys, as in PotPlayer.
+    addItem(tools, tr("Set In-Point (A)"), [this] { m_window->setClipIn(); },
+            QKeySequence(Qt::CTRL | Qt::Key_BracketLeft));
+    addItem(tools, tr("Set Out-Point (B)"), [this] { m_window->setClipOut(); },
+            QKeySequence(Qt::CTRL | Qt::Key_BracketRight));
+    addItem(tools, tr("Clear In/Out Points"), [this] { m_window->clearClipRange(); });
+    tools->addSeparator();
+    addItem(tools, tr("Cut / Extract Media..."), [this] { m_window->openMediaCutterDialog(); },
+            QKeySequence(Qt::CTRL | Qt::Key_X));
 }
 
 void PlayerMenu::buildWindowMenu()
